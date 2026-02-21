@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GoldFlow Pro | Standalone</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+  <!-- Libraries for PDF generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>GoldFlow Secure Login</title>
+
+<style>
+
+:root {
+      --bg-slate: #f8fafc;
+      --indigo-950: #1e1b4b;
+      --indigo-900: #312e81;
+      --indigo-600: #4f46e5;
+      --amber-400: #fbbf24;
+      --amber-500: #f59e0b;
+      --amber-600: #d97706;
+      --white: #ffffff;
+      --shadow-sm: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      --glass: rgba(255, 255, 255, 0.85);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0; padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: #0f172a;
+      color: #1e293b;
+      display: flex; justify-content: center; min-height: 100vh;
+    }
+
+    #app-container {
+      width: 100%; max-width: 500px;
+      background: var(--bg-slate);
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      position: relative;
+      box-shadow: 0 0 100px rgba(0,0,0,0.5);
+    }
+
+    header {
+      padding: 1rem 1.5rem;
+      background: var(--glass);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid #e2e8f0;
+      display: flex; justify-content: space-between; align-items: center;
+      position: sticky; top: 0; z-index: 50;
+    }
+
+    .logo-box { display: flex; align-items: center; gap: 0.75rem; }
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: var(--indigo-950); border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--amber-400); font-weight: 900; font-size: 1.25rem; font-style: italic;
+    }
+    .logo-text h1 { margin: 0; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.2em; color: var(--indigo-950); }
+    .logo-text span { font-size: 8px; font-weight: 800; color: var(--amber-600); text-transform: uppercase; letter-spacing: 0.2em; }
+
+    main { flex: 1; padding: 1.25rem; padding-bottom: 6rem; overflow-y: auto; }
+
+    .card {
+      background: var(--white); border-radius: 2rem; padding: 1.5rem;
+      margin-bottom: 1.5rem; border: 1px solid #f1f5f9; box-shadow: var(--shadow-sm);
+    }
+
+    .input-group { margin-bottom: 1rem; }
+    label { display: block; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--indigo-600); margin-bottom: 0.4rem; padding-left: 0.5rem; }
+    input, select {
+      width: 100%; padding: 1rem; border-radius: 1rem; border: 1px solid #e2e8f0;
+      background: #f8fafc; font-size: 0.875rem; font-weight: 600; color: var(--indigo-950); outline: none;
+    }
+    input:focus, select:focus { border-color: var(--amber-400); background: var(--white); }
+
+    button {
+      width: 100%; padding: 1rem; border: none; border-radius: 1.25rem;
+      font-weight: 800; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    }
+    button.primary { background: var(--indigo-950); color: var(--white); }
+    button.gold { background: var(--amber-500); color: var(--indigo-950); }
+    button.outline { background: transparent; border: 1px solid #e2e8f0; color: var(--indigo-950); }
+
+    nav {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: var(--glass); backdrop-filter: blur(20px); border-top: 1px solid #e2e8f0;
+      display: flex; justify-content: space-around; padding: 0.75rem; z-index: 50;
+    }
+    .nav-item {
+      display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
+      color: #94a3b8; text-decoration: none; font-size: 8px; font-weight: 800; text-transform: uppercase; cursor: pointer;
+    }
+    .nav-item.active { color: var(--indigo-950); }
+
+    .item-entry {
+      background: var(--white); border-radius: 1.5rem; padding: 1.25rem;
+      margin-bottom: 1rem; position: relative; border-bottom: 4px solid #f1f5f9;
+    }
+    .item-entry .remove { position: absolute; top: 1rem; right: 1rem; color: #cbd5e1; cursor: pointer; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; }
+
+    .summary-section {
+      text-align: center; margin-top: 1.5rem;
+      background: var(--indigo-950); color: white; padding: 2rem 1.5rem; border-radius: 2.5rem;
+    }
+    .balance-val { font-size: 2.5rem; font-weight: 900; letter-spacing: -0.05em; margin-bottom: 1rem; }
+    
+    .scroll-list { max-height: 40vh; overflow-y: auto; }
+body{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  background:#0f172a;
+}
+.hidden{display:none;}
+
+/* Snackbar for brief messages */
+.snackbar{
+  position:fixed;
+  left:50%;
+  bottom:80px;
+  transform:translateX(-50%);
+  background:#111;
+  color:#fff;
+  padding:10px 16px;
+  border-radius:8px;
+  box-shadow:0 6px 24px rgba(0,0,0,0.3);
+  z-index:9999;
+  font-weight:700;
+}
+
+#loginScreen{
+  position:fixed;
+  inset:0;
+  background:#0f172a;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.box{
+  background:#fff;
+  padding:20px;
+  border-radius:12px;
+  width:300px;
+}
+
+input,button{
+  width:100%;
+  padding:10px;
+  margin-top:8px;
+}
+
+button{
+  background:#1e1b4b;
+  color:white;
+  border:none;
+  border-radius:8px;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+#app{
+  display:none;
+  max-width:800px;
+  margin:auto;
+  padding:1rem;
+  background:#f8fafc;
+  min-height:100vh;
+}
+
+.card{
+  background:white;
+  padding:1rem;
+  border-radius:12px;
+  margin-bottom:1rem;
+}
+
+.userRow{
+  display:flex;
+  gap:6px;
+  align-items:center;
+  margin-bottom:6px;
+}
+
+.userRow input{
+  flex:1;
+}
+
+.deleteBtn{
+  background:#dc2626;
+}
+
+/* Small circular delete button for client items */
+.delete-small {
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.logoutBtn{
+  background:#7c2d12;
+  margin-bottom:1rem;
+}
+small{color:red;}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@capacitor/cli": "https://esm.sh/@capacitor/cli@^8.0.0",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+  }
+}
+</script>
+</head>
+
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="box">
+    <h3>🔐 GoldFlow Login</h3>
+    <input id="loginUser" placeholder="Username">
+    <input id="loginPass" type="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+    <small id="errorMsg"></small>
+  </div>
+</div>
+
+<!-- Snackbar -->
+<div id="snackbar" class="snackbar hidden"></div>
+
+<!-- APP -->
+<div id="app">
+  <button class="logoutBtn" onclick="logout()">Logout</button>
+
+  <div class="card">
+    <h3>Welcome <span id="currentUser"></span></h3>
+    <div id="app-container">
+    <header>
+      <div class="logo-box">
+        <div class="logo-icon">G</div>
+        <div class="logo-text">
+          <h1>GoldFlow</h1>
+          <span>Standalone App</span>
+        </div>
+      </div>
+      <div id="view-indicator" style="background: var(--indigo-950); color: white; padding: 4px 12px; border-radius: 20px; font-size: 8px; font-weight: 900;">LEDGER</div>
+    </header>
+
+    <main id="main-content">
+      <!-- Content injected by JS -->
+    </main>
+
+    <nav>
+      <div class="nav-item active" onclick="switchView('ledger')">
+        <span style="font-size: 1.25rem;">📊</span>
+        <span>Ledger</span>
+      </div>
+      <div class="nav-item" onclick="switchView('report')">
+        <span style="font-size: 1.25rem;">📈</span>
+        <span>Report</span>
+      </div>
+      <div class="nav-item" onclick="switchView('admin')">
+        <span style="font-size: 1.25rem;">🔑</span>
+        <span>Master</span>
+      </div>
+    </nav>
+  </div>
+<script>
+    // --- SUPABASE CONFIG ---
+    // ⚠️ REPLACE these with your actual Supabase project credentials
+    const SUPABASE_URL = 'https://lygqtpzuvpicedusupte.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5Z3F0cHp1dnBpY2VkdXN1cHRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2MzI4OTgsImV4cCI6MjA4NzIwODg5OH0.reujLaJXLtLsEX4Z7aOvs-yb6MfnchmiTgJX1ja7nD0';
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Helper to reference schema
+    const schema = 'GoldflowDB';
+
+    // --- APP STATE ---
+    const PASSPHRASE = 'GOLD786';
+    
+    let state = {
+      view: 'ledger',
+      customers: [],
+      vouchers: [],
+      reportData: null,
+      isAdminAuth: false,
+      currentVoucher: {
+        customerId: '',
+        date: new Date().toISOString().split('T')[0],
+        items: [],
+        mpGross: 0,
+        mpTunch: 100
+      }
+    };
+
+    // --- SUPABASE DB HELPERS ---
+
+    // Returns the logged-in user object (admin or customer)
+    function getLoggedInUser() {
+      return JSON.parse(localStorage.getItem('gf_session'));
+    }
+
+    function getLoggedInUserId() {
+      const user = getLoggedInUser();
+      return user ? user.id : null;
+    }
+
+    // Small snackbar helper for brief messages
+    function showSnackbar(msg, duration = 3000) {
+      const el = document.getElementById('snackbar');
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), duration);
+    }
+
+
+    // For admin: load all customers
+    async function loadCustomers() {
+      const user = getLoggedInUser();
+      if (!user) return [];
+      // If admin, load all customers
+      if (user.role === 'admin') {
+        const { data, error } = await sb.from('customers').select('*').order('created_at', { ascending: true });
+        if (error) { console.error('Load customers error:', error); return []; }
+        // Admin sees customers
+        return (data || []).map(c => ({ id: c.id, name: c.username, expiry: c.expiry, currentStock: 0 }));
+      } else {
+        // Customer sees their own clients
+        const clients = await loadCustomerClients(user.id);
+        return clients.map(c => ({ id: c.id, name: c.name, currentStock: c.current_stock || 0 }));
+      }
+    }
+
+    // For customer: load their own clients
+    async function loadCustomerClients(customerId) {
+      const { data, error } = await sb.from('customer_clients').select('*').eq('customer_id', customerId).order('created_at', { ascending: true });
+      if (error) { console.error('Load customer clients error:', error); return []; }
+      return (data || []).map(c => ({ id: c.id, name: c.name, master_password: c.master_password, current_stock: c.current_stock || 0 }));
+    }
+
+    // Save a new client for a customer
+    async function saveCustomerClient(client) {
+      const user = getLoggedInUser();
+      if (!user) return;
+
+      // Prevent duplicate client name for the same customer (unless updating same id)
+      const { data: dup } = await sb.from('customer_clients')
+        .select('id')
+        .eq('customer_id', user.id)
+        .eq('name', client.name)
+        .limit(1);
+      if (dup && dup.length > 0 && (!client.id || dup[0].id !== client.id)) {
+        showSnackbar('Client name already exists');
+        return;
+      }
+
+      const { error } = await sb.from('customer_clients').upsert({
+        id: client.id,
+        customer_id: user.id,
+        name: client.name,
+        master_password: client.master_password
+      });
+      if (error) console.error('Save customer client error:', error);
+    }
+
+    async function saveVoucher(voucher) {
+      const userId = getLoggedInUserId();
+      // 1. Get next voucher number for this client
+      const { data: existingVouchers } = await sb.from('vouchers').select('voucher_number').eq('client_id', voucher.customerId);
+      const nextVoucherNumber = (existingVouchers ? existingVouchers.length : 0) + 1;
+
+      // 2. Insert into vouchers table (public schema)
+      const { data: vData, error: vErr } = await sb.from('vouchers').insert({
+        client_id: voucher.customerId,
+        voucher_number: nextVoucherNumber,
+        date: voucher.date,
+        opening_balance: voucher.openingBalance,
+        closing_balance: voucher.closingBalance,
+        mp_gross: voucher.mpGross,
+        mp_tunch: voucher.mpTunch,
+        mp_fine: voucher.mpFine
+      }).select().single();
+      if (vErr) { console.error('Save voucher error:', vErr); return; }
+
+      // 3. Insert each item into voucher_items table (public schema)
+      if (voucher.items && voucher.items.length > 0) {
+        const itemRows = voucher.items.map(item => ({
+          voucher_id: vData.id,
+          description: item.description,
+          stamp: item.stamp,
+          gross_weight: item.grossWeight,
+          less_weight: item.lessWeight,
+          tunch: item.tunch,
+          wastage: item.wastage,
+          pcs: item.pcs,
+          final_weight: item.finalWeight
+        }));
+        const { error: iErr } = await sb.from('voucher_items').insert(itemRows);
+        if (iErr) console.error('Save voucher items error:', iErr);
+      }
+    }
+
+    // --- LOGIC ---
+    function calculateTotals() {
+      const fine = state.currentVoucher.items.reduce((acc, i) => acc + i.finalWeight, 0);
+      const gross = state.currentVoucher.items.reduce((acc, i) => acc + i.grossWeight, 0);
+      const net = state.currentVoucher.items.reduce((acc, i) => acc + (i.grossWeight - i.lessWeight), 0);
+      
+      const activeCust = state.customers.find(c => c.id === state.currentVoucher.customerId);
+      const opening = activeCust ? activeCust.currentStock : 0;
+      
+      const mpWeight = Number(state.currentVoucher.mpGross) || 0;
+      const mpTunch = Number(state.currentVoucher.mpTunch) || 100;
+      const mpFine = mpWeight * (mpTunch / 100);
+      
+      return { fine, gross, net, opening, mpFine, closing: opening + fine - mpFine };
+    }
+
+    async function switchView(v) {
+      state.view = v;
+      // Always reload customers from Supabase when switching views
+      state.customers = await loadCustomers();
+      if (v === 'report') {
+        // default to today's date range when opening report
+        const today = new Date().toISOString().split('T')[0];
+        state.reportData = await loadReportRange(today, today);
+      }
+      render();
+    }
+
+    // --- RENDERING ---
+    function render() {
+      const main = document.getElementById('main-content');
+      const indicator = document.getElementById('view-indicator');
+      const navItems = document.querySelectorAll('.nav-item');
+      
+      indicator.textContent = state.view.toUpperCase();
+      // navItems: 0=ledger,1=report,2=admin
+      if (navItems.length >= 3) {
+        navItems[0].className = state.view === 'ledger' ? 'nav-item active' : 'nav-item';
+        navItems[1].className = state.view === 'report' ? 'nav-item active' : 'nav-item';
+        navItems[2].className = state.view === 'admin' ? 'nav-item active' : 'nav-item';
+      }
+
+      if (state.view === 'ledger') renderLedger(main);
+      else if (state.view === 'admin') renderAdmin(main);
+      else if (state.view === 'report') renderReport(main);
+    }
+
+    function renderLedger(container) {
+      const totals = calculateTotals();
+      const activeCust = state.customers.find(c => c.id === state.currentVoucher.customerId);
+
+      container.innerHTML = `
+        <div class="card">
+          <label>Select Client Profile</label>
+          <select onchange="state.currentVoucher.customerId = this.value; render();">
+            <option value="">-- Choose Account --</option>
+            ${state.customers.map(c => `<option value="${c.id}" ${c.id === state.currentVoucher.customerId ? 'selected' : ''}>${c.name}</option>`).join('')}
+          </select>
+          <div class="grid-2" style="margin-top:1rem">
+            <div class="input-group">
+              <label>Date</label>
+              <input type="date" value="${state.currentVoucher.date}" onchange="state.currentVoucher.date = this.value">
+            </div>
+            <div class="input-group">
+              <label>Opening Stock</label>
+              <div style="background:var(--amber-50); padding:1rem; border-radius:1rem; text-align:center; font-weight:900; color:var(--amber-600)">
+                ${activeCust ? activeCust.currentStock.toFixed(3) : '0.000'} g
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+          <span style="font-size:10px; font-weight:900; color:var(--indigo-600)">ITEMS REGISTRY</span>
+          <button class="primary" onclick="addItem()" style="width:auto; padding:0.5rem 1rem">+ ADD ITEM</button>
+        </div>
+
+        <div id="items-list">
+          ${state.currentVoucher.items.map((item, idx) => `
+            <div class="item-entry" data-id="${item.id}">
+              <div class="remove" onclick="removeItem('${item.id}')">✕</div>
+              <div class="grid-2">
+                <div class="input-group"><label>Item Description</label><input type="text" value="${item.description}" oninput="updateItemField('${item.id}', 'description', this.value)"></div>
+                <div class="input-group"><label>Stamp</label><input type="text" value="${item.stamp}" oninput="updateItemField('${item.id}', 'stamp', this.value)"></div>
+              </div>
+              <div class="grid-2">
+                <div class="input-group"><label>Gross Weight</label><input type="number" step="0.001" value="${item.grossWeight || ''}" oninput="updateItemField('${item.id}', 'grossWeight', this.value)"></div>
+                <div class="input-group"><label>Less Weight</label><input type="number" step="0.001" value="${item.lessWeight || ''}" oninput="updateItemField('${item.id}', 'lessWeight', this.value)"></div>
+              </div>
+              <div class="grid-3">
+                <div class="input-group"><label>Tunch %</label><input type="number" step="0.01" value="${item.tunch}" oninput="updateItemField('${item.id}', 'tunch', this.value)"></div>
+                <div class="input-group"><label>Wastage %</label><input type="number" step="0.01" value="${item.wastage}" oninput="updateItemField('${item.id}', 'wastage', this.value)"></div>
+                <div class="input-group"><label>Pcs</label><input type="number" value="${item.pcs}" oninput="updateItemField('${item.id}', 'pcs', this.value)"></div>
+              </div>
+              <div style="background:var(--indigo-950); color:white; padding:0.75rem; border-radius:1rem; display:flex; justify-content:space-between; font-size:11px; font-weight:900">
+                <span style="opacity:0.6">FINE WEIGHT</span>
+                <span class="fine-label">${item.finalWeight.toFixed(3)} g</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="card" style="border: 1px solid var(--indigo-100); background: #fdfdfd;">
+          <div style="font-size:10px; font-weight:900; color:var(--indigo-600); margin-bottom:1rem; text-transform:uppercase; letter-spacing:0.1em">MP Deduction Section</div>
+          <div class="grid-2">
+            <div class="input-group">
+              <label>Weight (g)</label>
+              <input type="number" step="0.001" value="${state.currentVoucher.mpGross || ''}" oninput="updateMpDeduction('mpGross', this.value)">
+            </div>
+            <div class="input-group">
+              <label>Tunch %</label>
+              <input type="number" step="0.01" value="${state.currentVoucher.mpTunch}" oninput="updateMpDeduction('mpTunch', this.value)">
+            </div>
+          </div>
+          <div style="font-size:11px; font-weight:800; color:var(--indigo-950); text-align:right; margin-top:0.5rem">
+            Deduction Fine: <span class="mp-fine-label" style="color:red">-${totals.mpFine.toFixed(3)} g</span>
+          </div>
+        </div>
+
+        <div class="summary-section">
+          <div style="font-size:9px; color:var(--amber-400); font-weight:800; margin-bottom:0.5rem; letter-spacing:0.2em">ESTIMATED CLOSING BALANCE</div>
+          <div class="balance-val">${totals.closing.toFixed(3)} g</div>
+          <button class="gold" onclick="saveAndPrint()" style="height:4rem; font-size:12px">SAVE & GENERATE PDF</button>
+        </div>
+      `;
+    }
+
+    function renderAdmin(container) {
+      if (!state.isAdminAuth) {
+        container.innerHTML = `
+          <div class="card" style="text-align:center; padding:3rem 1rem">
+            <div style="font-size:3rem; margin-bottom:1rem">🔒</div>
+            <label>Master Passphrase</label>
+            <input type="password" id="admin-p" style="text-align:center; font-size:1.5rem">
+            <button class="primary" style="margin-top:1rem" onclick="authAdmin()">Unlock Vault</button>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; margin-bottom:1rem">
+            <span style="font-weight:900; font-size:10px">ACCOUNTS MANAGEMENT</span>
+            <span style="color:red; font-weight:900; font-size:10px; cursor:pointer" onclick="state.isAdminAuth=false; render()">LOCK</span>
+          </div>
+          <div class="grid-2" style="margin-bottom:1.5rem">
+            <input type="text" id="new-c-name" placeholder="Client Name">
+            <button class="primary" onclick="addClient()">ADD</button>
+          </div>
+          <div class="scroll-list">
+            ${state.customers.map(c => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:1rem; background:#f8fafc; border-radius:1rem; margin-bottom:0.5rem; border: 1px solid #f1f5f9;">
+                <span style="font-weight:800; font-size:13px">${c.name}</span>
+                <div style="display:flex; align-items:center; gap:5px">
+                  <input type="number" step="0.001" value="${c.currentStock}" onchange="updateStock('${c.id}', this.value)" style="width:100px; padding:8px; text-align:right; font-weight:900; font-size:12px; border:1px solid #e2e8f0; border-radius:10px">
+                  <span style="font-size:9px; font-weight:900; color:#94a3b8">g</span>
+                  <button class="delete-small" title="Delete customer" onclick="deleteCustomer('${c.id}')">✕</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // --- ACTIONS ---
+    async function authAdmin() {
+      if (document.getElementById('admin-p').value === PASSPHRASE) {
+        state.isAdminAuth = true;
+        // Reload customers from DB so master page shows latest
+        state.customers = await loadCustomers();
+        render();
+      } else alert('Wrong Passphrase');
+    }
+
+    async function addClient() {
+      const nameInput = document.getElementById('new-c-name');
+      const name = nameInput.value.trim();
+      if (!name) return;
+      const userId = getLoggedInUserId();
+      if (!userId) { alert('Session error. Please logout and login again.'); return; }
+      // Prevent duplicate client name for same customer
+      const { data: dup } = await sb.from('customer_clients').select('id').eq('customer_id', userId).eq('name', name).limit(1);
+      if (dup && dup.length > 0) {
+        showSnackbar('Client name already exists');
+        return;
+      }
+
+      // Insert into customer_clients table (public schema) and reload state from DB
+      const { data, error } = await sb.from('customer_clients').insert({ name, customer_id: userId, master_password: PASSPHRASE }).select();
+      if (error) { console.error('Add client error:', error); alert('Failed to add client: ' + error.message); return; }
+      // Refresh customers/clients from DB to keep UI consistent
+      state.customers = await loadCustomers();
+      nameInput.value = '';
+      render();
+    }
+
+    async function updateStock(id, val) {
+      const c = state.customers.find(x => x.id === id);
+      c.currentStock = Number(val);
+      // Update customer_clients table (public schema)
+      await sb.from('customer_clients').update({ current_stock: c.currentStock }).eq('id', id);
+    }
+
+    function addItem() {
+      state.currentVoucher.items.push({ id: Math.random().toString(36).substr(2,9), description: '', stamp: '', grossWeight: 0, lessWeight: 0, tunch: 92, wastage: 0, pcs: 1, finalWeight: 0 });
+      render();
+    }
+
+    function removeItem(id) {
+      state.currentVoucher.items = state.currentVoucher.items.filter(i => i.id !== id);
+      render();
+    }
+
+    // --- SURGICAL UPDATES (Fixes focus loss) ---
+    function updateItemField(id, field, val) {
+      const i = state.currentVoucher.items.find(x => x.id === id);
+      i[field] = (field === 'description' || field === 'stamp') ? val : Number(val);
+      i.finalWeight = (i.grossWeight - i.lessWeight) * ((i.tunch + i.wastage) / 100);
+      
+      const entry = document.querySelector(`.item-entry[data-id="${id}"]`);
+      if (entry) {
+        entry.querySelector('.fine-label').textContent = i.finalWeight.toFixed(3) + ' g';
+      }
+      
+      updateGlobalSummary();
+    }
+
+    function updateMpDeduction(field, val) {
+      state.currentVoucher[field] = Number(val);
+      const totals = calculateTotals();
+      const mpLabel = document.querySelector('.mp-fine-label');
+      if (mpLabel) mpLabel.textContent = `-${totals.mpFine.toFixed(3)} g`;
+      updateGlobalSummary();
+    }
+
+    function updateGlobalSummary() {
+      const totals = calculateTotals();
+      const balVal = document.querySelector('.balance-val');
+      if (balVal) balVal.textContent = totals.closing.toFixed(3) + ' g';
+    }
+
+    // Delete a customer client (only allowed for the owning customer)
+    async function deleteClient(id) {
+      // Normalize id parameter (sometimes an object is passed)
+      const idStr = (id && typeof id === 'object') ? (id.id || (id.value && id.value.id) || JSON.stringify(id)) : id;
+      if (!confirm('Delete this client?')) return;
+      const user = getLoggedInUser();
+      if (!user) { showSnackbar('Session error'); return; }
+      console.log('deleteClient called', { id: idStr, user });
+      // Attempt delete and ensure at least one row was removed
+      const { data, error } = await sb.from('customer_clients').delete().select().eq('id', idStr).eq('customer_id', user.id);
+      console.log('deleteClient result', { data, error });
+      if (error) { console.error('Delete client error:', error); showSnackbar('Failed to delete client: ' + (error.message || error)); return; }
+      if (!data || data.length === 0) {
+        // Fallback: try delete without .select() (some setups don't return rows)
+        console.log('deleteClient fallback delete (no select)');
+        const { error: fbErr } = await sb.from('customer_clients').delete().eq('id', idStr).eq('customer_id', user.id);
+        console.log('deleteClient fallback result', { fbErr });
+        if (fbErr) { console.error('Delete client fallback error:', fbErr); showSnackbar('Failed to delete client: ' + (fbErr.message || fbErr)); return; }
+        // remove locally so UI updates immediately
+        state.customers = state.customers.filter(c => String(c.id) !== String(idStr));
+        showSnackbar('Client deleted');
+      } else {
+        // remove locally so UI updates immediately
+        state.customers = state.customers.filter(c => String(c.id) !== String(idStr));
+        showSnackbar('Client deleted');
+      }
+      // Reload clients from DB to ensure persistence
+        try { state.customers = await loadCustomers(); } catch (e) { console.error('Reload after deleteClient failed', e); }
+      // Clear current voucher selection if deleted
+      if (state.currentVoucher.customerId === id) state.currentVoucher.customerId = '';
+      render();
+    }
+
+    // Delete a customer (admin only)
+    async function deleteCustomer(id) {
+      // Normalize id parameter (sometimes an object is passed)
+      const idStr = (id && typeof id === 'object') ? (id.id || (id.value && id.value.id) || JSON.stringify(id)) : id;
+      if (!confirm('Delete this customer and all its clients?')) return;
+      console.log('deleteCustomer called', { id: idStr });
+      // Verify the id belongs to a row in `customers` first
+      const { data: custCheck, error: custCheckErr } = await sb.from('customers').select('id').eq('id', idStr).limit(1);
+      if (custCheckErr) { console.error('Customer existence check failed', custCheckErr); showSnackbar('Failed to verify customer'); return; }
+      // If no customer row found, assume caller passed a client id — delete that client instead
+      if (!custCheck || custCheck.length === 0) {
+        console.log('deleteCustomer: id not found in customers, treating as client id. Attempting to delete client row.', { id: idStr });
+        const { error: clientDelErr } = await sb.from('customer_clients').delete().eq('id', idStr);
+        if (clientDelErr) { console.error('Failed to delete client by id fallback', clientDelErr); showSnackbar('Failed to delete client'); return; }
+        // remove locally and refresh
+        state.customers = state.customers.filter(c => String(c.id) !== String(idStr));
+        try { state.customers = await loadCustomers(); } catch (e) { console.error('Reload after client fallback delete failed', e); }
+        showSnackbar('Client deleted');
+        render();
+        return;
+      }
+      // First delete client profiles belonging to customer
+      const { data: delClients, error: err1 } = await sb.from('customer_clients').delete().select().eq('customer_id', idStr);
+      console.log('deleteCustomer - delClients result', { delClients, err1 });
+      if (err1) { console.error('Delete customer clients error:', err1); showSnackbar('Failed to delete customer clients: ' + (err1.message || err1)); return; }
+      // Then delete the customer and verify
+      const { data: delCust, error } = await sb.from('customers').delete().select().eq('id', idStr);
+      console.log('deleteCustomer - delCust result', { delCust, error });
+      if (error) { console.error('Delete customer error:', error); showSnackbar('Failed to delete customer: ' + (error.message || error)); return; }
+      if (!delCust || delCust.length === 0) {
+        // Fallback: try delete without .select()
+        console.log('deleteCustomer fallback delete (no select)');
+        const { error: fbErr } = await sb.from('customers').delete().eq('id', idStr);
+        console.log('deleteCustomer fallback result', { fbErr });
+        if (fbErr) { console.error('Delete customer fallback error:', fbErr); showSnackbar('Failed to delete customer: ' + (fbErr.message || fbErr)); return; }
+        // remove locally
+        state.customers = state.customers.filter(c => String(c.id) !== String(idStr));
+        showSnackbar('Customer deleted');
+      } else {
+        // remove locally
+        state.customers = state.customers.filter(c => String(c.id) !== String(idStr));
+        showSnackbar('Customer deleted');
+      }
+      // Reload customers from DB so UI reflects persistent state
+      try { state.customers = await loadCustomers(); } catch (e) { console.error('Reload after deleteCustomer failed', e); }
+      render();
+    }
+
+    async function saveAndPrint() {
+      if (!state.currentVoucher.customerId) return alert('Select Client Profile');
+      if (state.currentVoucher.items.length === 0) return alert('Add items to registry');
+      
+      const totals = calculateTotals();
+      const c = state.customers.find(x => x.id === state.currentVoucher.customerId);
+      
+      // Store current stock for later reference in PDF as "Opening"
+      const openingAtTime = c.currentStock;
+      
+      const v = { 
+        ...state.currentVoucher, 
+        customerName: c.name, 
+        openingBalance: openingAtTime,
+        closingBalance: totals.closing,
+        mpFine: totals.mpFine
+      };
+      
+      c.currentStock = totals.closing;
+      
+      // Save voucher + items to Supabase
+      await saveVoucher(v);
+      // Update customer closing balance in customer_clients table (public schema)
+      await sb.from('customer_clients').update({ current_stock: c.currentStock }).eq('id', c.id);
+      
+      printPDF(openingAtTime);
+      
+      state.currentVoucher = { 
+        customerId: '', 
+        date: new Date().toISOString().split('T')[0], 
+        items: [], 
+        mpGross: 0, 
+        mpTunch: 100 
+      };
+      
+      alert('Voucher Saved & Downloaded');
+      render();
+    }
+
+    // --- REPORTS ---
+    // Load report for a date range and group vouchers by customer -> client
+    async function loadReportRange(from, to) {
+      const out = { customers: [] };
+      try {
+        // fetch vouchers in date range
+        const { data: vouchers, error: vErr } = await sb.from('vouchers').select('*').gte('date', from).lte('date', to).order('date', { ascending: false });
+        if (vErr) { console.error('vouchers fetch error', vErr); }
+        const vs = vouchers || [];
+
+        // get unique client ids
+        const clientIds = [...new Set(vs.map(v => v.client_id).filter(Boolean))];
+        const clients = clientIds.length > 0 ? (await sb.from('customer_clients').select('*').in('id', clientIds)).data || [] : [];
+
+        // get unique customer ids
+        const customerIds = [...new Set(clients.map(c => c.customer_id).filter(Boolean))];
+        const customers = customerIds.length > 0 ? (await sb.from('customers').select('*').in('id', customerIds)).data || [] : [];
+
+        // maps
+        const clientMap = {};
+        clients.forEach(c => clientMap[c.id] = c);
+        const custMap = {};
+        customers.forEach(c => custMap[c.id] = c);
+
+        // group vouchers under clients
+        const clientVouchers = {};
+        vs.forEach(v => {
+          if (!clientVouchers[v.client_id]) clientVouchers[v.client_id] = [];
+          clientVouchers[v.client_id].push(v);
+        });
+
+        // assemble structure: customers -> clients -> vouchers
+        customerIds.forEach(cid => {
+          const cust = custMap[cid];
+          const custClients = clients.filter(cl => cl.customer_id === cid).map(cl => ({ ...cl, vouchers: (clientVouchers[cl.id] || []) }));
+          out.customers.push({ ...cust, clients: custClients });
+        });
+
+        // Also include any clients (and their vouchers) whose customer row may be missing (edge-case)
+        const orphanClientIds = clientIds.filter(id => !customers.find(c => c.id === clientMap[id].customer_id));
+        orphanClientIds.forEach(cid => {
+          const cl = clientMap[cid];
+          out.customers.push({ id: cl.customer_id || 'unknown', username: '(unknown customer)', clients: [{ ...cl, vouchers: (clientVouchers[cl.id] || []) }] });
+        });
+
+      } catch (e) { console.error('loadReportRange failed', e); }
+      return out;
+    }
+
+    async function applyReportFilter() {
+      const from = document.getElementById('report-from').value;
+      const to = document.getElementById('report-to').value;
+      if (!from || !to) { showSnackbar('Select both dates'); return; }
+      state.reportData = await loadReportRange(from, to);
+      render();
+    }
+
+    async function printVoucherById(voucherId) {
+      try {
+        const { data: vData, error: vErr } = await sb.from('vouchers').select('*').eq('id', voucherId).limit(1).single();
+        if (vErr || !vData) { console.error('voucher fetch error', vErr); showSnackbar('Failed to load voucher'); return; }
+        const { data: items } = await sb.from('voucher_items').select('*').eq('voucher_id', voucherId).order('id', { ascending: true });
+        const { data: client } = await sb.from('customer_clients').select('*').eq('id', vData.client_id).limit(1).single();
+        const { data: customer } = await sb.from('customers').select('*').eq('id', client.customer_id).limit(1).single();
+        const clientName = client ? client.name : (vData.client_id || 'Unknown');
+        const customerName = customer ? customer.username : '';
+        generatePDFFromData(vData, items || [], clientName, customerName);
+      } catch (e) { console.error('printVoucherById failed', e); showSnackbar('Failed to print voucher'); }
+    }
+
+    function generatePDFFromData(v, items, clientName, customerName) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text((customerName || 'GOLDFLOW').toUpperCase(), 105, 15, { align: 'center' });
+      doc.setFontSize(12);
+      doc.text('VOUCHER RECEIPT', 105, 25, { align: 'center' });
+      doc.setFontSize(10);
+      doc.text(`Date: ${v.date || ''} | Voucher No: ${v.voucher_number || ''}`, 15, 35);
+      doc.text(`Customer: ${clientName}`, 15, 42);
+
+      const rows = (items || []).map((i, idx) => [idx+1, i.description || '', i.stamp || '', i.pcs || '', (i.gross_weight||0).toFixed(3), (i.less_weight||0).toFixed(3), ((i.gross_weight||0)-(i.less_weight||0)).toFixed(3), (i.tunch||'').toString(), (i.wastage||'').toString(), (i.final_weight||0).toFixed(3)]);
+      rows.push(['', 'TOTALS', '', '',
+        rows.reduce((a,r)=>a+Number(r[4]||0),0).toFixed(3),
+        rows.reduce((a,r)=>a+Number(r[5]||0),0).toFixed(3),
+        rows.reduce((a,r)=>a+Number(r[6]||0),0).toFixed(3), '', '', rows.reduce((a,r)=>a+Number(r[9]||0),0).toFixed(3)
+      ]);
+
+      doc.autoTable({ startY: 50, head: [['#','Desc','Stamp','Pcs','Gross','Less','Net','Tunch%','Wstg','Final Wt']], body: rows, styles:{fontSize:8} });
+      doc.save(`Voucher_${clientName.replace(/\s+/g,'_')}_${v.date || ''}.pdf`);
+    }
+
+    function renderReport(container) {
+      const r = state.reportData || { customers: [] };
+      const today = new Date().toISOString().split('T')[0];
+      container.innerHTML = `
+        <div class="card">
+          <div style="display:flex; gap:0.75rem; margin-bottom:1rem; align-items:center">
+            <div style="flex:1">
+              <label>FROM</label>
+              <input id="report-from" type="date" value="${today}">
+            </div>
+            <div style="flex:1">
+              <label>TO</label>
+              <input id="report-to" type="date" value="${today}">
+            </div>
+            <div style="flex:0 0 140px; align-self:flex-end">
+              <button class="primary" onclick="applyReportFilter()">Filter</button>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:1rem">
+          ${r.customers.length === 0 ? '<div style="padding:1rem;color:#94a3b8">No Records</div>' : r.customers.map(c => `
+            <div class="card">
+              <div style="display:flex; justify-content:space-between">
+                <div style="font-weight:900">${c.username || c.name || 'Customer'}</div>
+                <div style="color:#94a3b8">${c.id}</div>
+              </div>
+              <div style="margin-top:0.5rem">
+                ${c.clients.map(cl => `
+                  <div style="padding:0.5rem 0; border-top:1px dashed #f1f5f9">
+                    <div style="font-weight:800">${cl.name}</div>
+                    ${cl.vouchers.length === 0 ? '<div style="color:#94a3b8">No vouchers</div>' : cl.vouchers.map(v => `
+                      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.5rem">
+                        <div>${v.date} — Voucher #${v.voucher_number}</div>
+                        <div style="font-weight:900">${(v.closing_balance||'').toString()}</div>
+                        <div><button class="gold" onclick="printVoucherById('${v.id}')">Print Receipt</button></div>
+                      </div>
+                    `).join('')}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function printPDF(providedOpening) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const totals = calculateTotals();
+      const c = state.customers.find(x => x.id === state.currentVoucher.customerId);
+      
+      // If providedOpening is undefined (preview mode), use current state
+      const opening = providedOpening !== undefined ? providedOpening : totals.opening;
+      const closing = opening + totals.fine - totals.mpFine;
+
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("GOLD RECEIPT STATEMENT", 105, 15, { align: 'center' });
+      
+      doc.setFontSize(11);
+      doc.text("Account: " + c.name.toUpperCase(), 15, 25);
+      doc.setFont("helvetica", "normal");
+      doc.text("Date: " + state.currentVoucher.date, 195, 25, { align: 'right' });
+
+      // Build main item rows
+      const rows = state.currentVoucher.items.map((i, idx) => [
+        idx + 1, 
+        i.description, 
+        i.stamp, 
+        i.grossWeight.toFixed(3), 
+        i.lessWeight.toFixed(3), 
+        (i.grossWeight - i.lessWeight).toFixed(3), 
+        i.tunch.toFixed(2), 
+        i.wastage.toFixed(2), 
+        i.pcs, 
+        i.finalWeight.toFixed(3)
+      ]);
+
+      // 1. ADD TOTAL ROW
+      rows.push([
+        { content: 'TOTAL', colSpan: 3, styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: totals.gross.toFixed(3), styles: { fontStyle: 'bold' } },
+        '',
+        { content: totals.net.toFixed(3), styles: { fontStyle: 'bold' } },
+        '', '', '',
+        { content: totals.fine.toFixed(3), styles: { fontStyle: 'bold' } }
+      ]);
+
+      // 2. ADD MP DEDUCTION ROW
+      // indices: 0:item, 1:stamp, 2:gross, 3:less, 4:net, 5:tunch, 6:wastage, 7:pcs, 8:fine
+      // User requested: value in gross weight column, Tunch % in Tunch column and final value in Fine column.
+      rows.push([
+        { content: 'MP DEDUCTION FINE', colSpan: 3, styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: (state.currentVoucher.mpGross || 0).toFixed(3), styles: { fontStyle: 'bold' } }, // Index 3 (Gross)
+        '', // Index 4 (Less)
+        '', // Index 5 (Net Wt)
+        { content: state.currentVoucher.mpTunch.toFixed(2) + '%', styles: { fontStyle: 'bold' } }, // Index 6 (Tunch)
+        '', // Index 7 (Wastage)
+        '', // Index 8 (Pcs)
+        { content: `(-) ${totals.mpFine.toFixed(3)}`, styles: { fontStyle: 'bold', textColor: [200, 0, 0] } } // Index 9 (Fine)
+      ]);
+
+      // 3. ADD OPENING STOCK ROW
+      rows.push([
+        { content: 'OPENING STOCK BALANCE', colSpan: 9, styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: opening.toFixed(3), styles: { fontStyle: 'bold' } }
+      ]);
+
+      // 4. ADD CLOSING BALANCE ROW
+      rows.push([
+        { content: 'NET CLOSING BALANCE', colSpan: 9, styles: { fontStyle: 'bold', halign: 'right', fillColor: [245, 245, 245] } },
+        { content: closing.toFixed(3), styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }
+      ]);
+
+      doc.autoTable({
+        startY: 32,
+        head: [['#', 'Description', 'Stamp', 'Gross', 'Less', 'Net Wt', 'Tunch', 'Wstg', 'Pcs', 'Fine']],
+        body: rows,
+        theme: 'grid',
+        styles: { 
+          textColor: 20, 
+          lineColor: 0, 
+          lineWidth: 0.1, 
+          fontSize: 8,
+          cellPadding: 3
+        },
+        headStyles: { 
+          fillColor: 255, 
+          textColor: 0, 
+          fontStyle: 'bold', 
+          lineWidth: 0.2
+        },
+        alternateRowStyles: {
+          fillColor: 255
+        }
+      });
+
+      doc.save(`Receipt_${c.name.replace(/\s+/g, '_')}_${state.currentVoucher.date}.pdf`);
+    }
+
+    // --- INIT ---
+    async function start() {
+      state.customers = await loadCustomers();
+      render();
+    }
+    start();
+  </script>
+  
+  </div>
+
+  <!-- ADMIN PANEL -->
+  <div id="adminPanel" class="card hidden">
+    <h3>🔑 Admin – User Management</h3>
+
+    <input id="newUser" placeholder="Username">
+    <input id="newPass" placeholder="Password">
+    <label>Expiry Date</label>
+    <input id="newExpiry" type="date">
+    <button onclick="addUser()">Add User</button>
+
+    <hr>
+    <div id="userList"></div>
+  </div>
+</div>
+
+<script>
+/* ===== SUPABASE AUTH HELPERS (reuse same client from inner script) ===== */
+const sbAuth = sb; // reuse the Supabase client already created above
+
+let users = []; // loaded from Supabase
+
+// --- REST API USAGE NOTE ---
+// For REST API calls to custom schema tables, use only the table name in the URL (e.g. /rest/v1/admin),
+// and set Accept-Profile header to the schema name (GoldflowDB).
+// Example fetch:
+// fetch('https://lygqtpzuvpicedusupte.supabase.co/rest/v1/admin?select=*', {
+//   headers: {
+//     'apikey': SUPABASE_ANON_KEY,
+//     'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+//     'Accept-Profile': 'GoldflowDB'
+//   }
+// })
+
+/* ===== SEED DEFAULT ADMIN (runs once on first ever load) ===== */
+async function seedDefaultAdmin() {
+  // Supabase JS client supports schema.table notation, but REST API does not.
+  const { data } = await sbAuth.from('admin').select('id').eq('username', 'admin').limit(1);
+  if (!data || data.length === 0) {
+    await sbAuth.from('admin').insert([
+      { username: 'admin', password: 'admin123' }
+    ]);
+  }
+}
+seedDefaultAdmin();
+
+/* ===== LOGIN ===== */
+// --- ADMIN LOGIN VIA REST API ---
+// If you want to login via REST API (not JS client), use fetch with Accept-Profile header:
+// Example:
+// async function loginAdminREST(username, password) {
+//   const url = `${SUPABASE_URL}/rest/v1/admin?select=*&username=eq.${encodeURIComponent(username)}&password=eq.${encodeURIComponent(password)}&limit=1`;
+//   const res = await fetch(url, {
+//     headers: {
+//       'apikey': SUPABASE_ANON_KEY,
+//       'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+//       'Accept-Profile': 'GoldflowDB'
+//     }
+//   });
+//   const data = await res.json();
+//   return data;
+// }
+
+async function login() {
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value.trim();
+  const err = document.getElementById('errorMsg');
+  err.textContent = '';
+
+  // Try admin login first (JS client)
+  let { data, error } = await sbAuth.from('admin')
+    .select('*')
+    .eq('username', u)
+    .eq('password', p)
+    .limit(1);
+
+  // If you want to use REST API, call loginAdminREST(u, p) instead.
+
+  if (data && data.length > 0) {
+    const user = { ...data[0], role: 'admin' };
+    localStorage.setItem('gf_session', JSON.stringify(user));
+    showApp(user);
+    return;
+  }
+
+  // Try customer login
+  ({ data, error } = await sbAuth.from('customers')
+    .select('*')
+    .eq('username', u)
+    .eq('password', p)
+    .limit(1));
+
+  if (data && data.length > 0) {
+    const user = { ...data[0], role: 'user' };
+    // Check expiry
+    const today = new Date().toISOString().split('T')[0];
+    if (user.expiry && today > user.expiry) {
+      err.textContent = 'Account expired. Contact admin.';
+      return;
+    }
+    localStorage.setItem('gf_session', JSON.stringify(user));
+    showApp(user);
+    return;
+  }
+
+  err.textContent = 'Invalid credentials';
+}
+
+function showApp(user) {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('currentUser').textContent = user.username;
+
+  if (user.role === 'admin') {
+    document.getElementById('adminPanel').classList.remove('hidden');
+    document.getElementById('app-container').style.display = 'none';
+    renderUsers();
+  } else {
+    // For regular users, reload their customers from Supabase
+    start();
+  }
+}
+
+/* ===== ADMIN – USER MANAGEMENT (Supabase) ===== */
+async function addUser() {
+  const u = document.getElementById('newUser').value.trim();
+  const p = document.getElementById('newPass').value.trim();
+  const e = document.getElementById('newExpiry').value;
+
+  if (!u || !p || !e) return alert('Fill all fields');
+
+  // Check if user already exists
+  const { data: existing } = await sbAuth.from('customers').select('id').eq('username', u).limit(1);
+  if (existing && existing.length > 0) return alert('User exists');
+
+  const { error } = await sbAuth.from('customers').insert({ username: u, password: p, expiry: e });
+  if (error) { console.error('Add user error:', error); alert('Failed to add user'); return; }
+
+  document.getElementById('newUser').value = '';
+  document.getElementById('newPass').value = '';
+  document.getElementById('newExpiry').value = '';
+  renderUsers();
+}
+
+async function renderUsers() {
+  const list = document.getElementById('userList');
+  list.innerHTML = '<div style="text-align:center;padding:1rem;color:#94a3b8">Loading...</div>';
+
+  const { data, error } = await sbAuth.from('customers').select('*').order('created_at', { ascending: true });
+  if (error) { console.error('Load users error:', error); list.innerHTML = '<div style="color:red">Failed to load users</div>'; return; }
+
+  users = data || [];
+  list.innerHTML = '';
+
+  users.forEach(u => {
+    const row = document.createElement('div');
+    row.className = 'userRow';
+    row.innerHTML = `
+      <strong>${u.username}</strong>
+      <input type="date" value="${u.expiry || ''}">
+      <button class="deleteBtn">X</button>
+    `;
+
+    row.querySelector('input').onchange = async (ev) => {
+      const newExpiry = ev.target.value;
+      await sbAuth.from('customers').update({ expiry: newExpiry }).eq('id', u.id);
+    };
+
+    row.querySelector('button').onclick = async () => {
+      if (confirm('Delete user?')) {
+        await sbAuth.from('customers').delete().eq('id', u.id);
+        renderUsers();
+      }
+    };
+
+    list.appendChild(row);
+  });
+}
+
+/* ===== LOGOUT ===== */
+function logout() {
+  localStorage.removeItem('gf_session');
+  location.reload();
+}
+
+/* ===== AUTO LOGIN ===== */
+(async function autoLogin() {
+  const session = JSON.parse(localStorage.getItem('gf_session'));
+  if (session && session.id) {
+    let data = null;
+    if (session.role === 'admin') {
+      // Re-verify admin
+      const res = await sbAuth.from('admin').select('*').eq('id', session.id).limit(1);
+      data = res.data;
+    } else {
+      // Re-verify customer
+      const res = await sbAuth.from('customers').select('*').eq('id', session.id).limit(1);
+      data = res.data;
+    }
+    if (data && data.length > 0) {
+      const user = { ...data[0], role: session.role };
+      if (user.role === 'user') {
+        const today = new Date().toISOString().split('T')[0];
+        if (user.expiry && today > user.expiry) {
+          localStorage.removeItem('gf_session');
+          return; // expired, stay on login
+        }
+      }
+      // Update local session with latest data
+      localStorage.setItem('gf_session', JSON.stringify(user));
+      showApp(user);
+    } else {
+      localStorage.removeItem('gf_session');
+    }
+  }
+})();
+</script>
+
+</body>
+</html>
