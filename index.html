@@ -926,19 +926,31 @@ small{color:red;}
       const margin = 36;
       const startY = 48;
 
-      // Header area
-      doc.setFontSize(20);
+      // Header area (static title)
+      doc.setFontSize(16);
       doc.setFont(undefined, 'bold');
-      doc.text((customerName || 'GOLDFLOW').toUpperCase(), pageWidth / 2, startY, { align: 'center' });
-      doc.setFontSize(12);
-      doc.setFont(undefined, 'normal');
-      doc.text('VOUCHER RECEIPT', pageWidth / 2, startY + 20, { align: 'center' });
+      doc.text('GOLD RECEIPT STATEMENT', pageWidth / 2, startY, { align: 'center' });
 
-      // meta info
+      // Meta box: draw a rectangle and place Account (left, bold) and Date/Voucher (right)
+      const metaBoxY = startY + 20;
+      const metaBoxH = 56;
+
+      // Account on left (bold, slightly larger)
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text(`Account: ${clientName}`, margin + 8, metaBoxY + 20);
+
+      // Date and Voucher on right (aligned above the Fine column)
+      // compute last column right edge from our columnStyles so the meta aligns above the Fine column
+      const colWidths = [36, 160, 60, 70, 60, 60, 60, 60, 40, 80];
+      const totalColsWidth = colWidths.reduce((s, w) => s + w, 0);
+      const fineColRightX = margin + totalColsWidth;
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'bold');
+      doc.text(`Date: ${v.date || ''}`, fineColRightX - 4, metaBoxY + 20, { align: 'right' });
       doc.setFontSize(10);
-      doc.text(`Date: ${v.date || ''}`, margin, startY + 48);
-      doc.text(`Voucher No: ${v.voucher_number || ''}`, pageWidth - margin - 120, startY + 48);
-      doc.text(`Account: ${clientName}`, margin, startY + 68);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Voucher No: ${v.voucher_number || ''}`, fineColRightX - 4, metaBoxY + 36, { align: 'right' });
 
       // Build rows for items
       const rows = (items || []).map((it, idx) => {
@@ -966,27 +978,29 @@ small{color:red;}
       // summary rows: totals, mp deduction, opening, closing
       const tableBody = rows.slice();
       tableBody.push([
-        { content: '', styles: {} },
-        { content: 'TOTAL', colSpan: 2, styles: { fontStyle: 'bold', halign: 'center' } },
+        '',
+        { content: 'TOTAL', styles: { fontStyle: 'bold' } },
+        '',
         { content: totals.gross.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
         { content: totals.less.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
         { content: totals.net.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
-        { content: '', styles: {} },
-        { content: '', styles: {} },
-        { content: '', styles: {} },
+        '',
+        '',
+        '',
         { content: totals.fine.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } }
       ]);
 
       tableBody.push([
-        { content: '', styles: {} },
-        { content: 'MP DEDUCTION FINE', colSpan: 2, styles: { fontStyle: 'bold', halign: 'center' } },
-        { content: mpGross.toFixed(3), styles: { halign: 'right' } },
-        { content: '', styles: {} },
-        { content: '', styles: {} },
-        { content: mpTunch.toFixed(2) + '%', styles: { halign: 'center', fontStyle: 'bold' } },
-        { content: '', styles: {} },
-        { content: '', styles: {} },
-        { content: `(-) ${mpFine.toFixed(3)}`, styles: { halign: 'right', textColor: [200, 0, 0], fontStyle: 'bold' } }
+        '',
+        { content: 'MP DEDUCTION FINE', styles: { fontStyle: 'bold' } },
+        '',
+        { content: mpGross.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
+        '',
+        '',
+        { content: mpTunch.toFixed(2) + '%', styles: { fontStyle: 'bold', halign: 'center' } },
+        '',
+        '',
+        { content: `(-) ${mpFine.toFixed(3)}`, styles: { fontStyle: 'bold', textColor: [200, 0, 0], halign: 'right' } }
       ]);
 
       tableBody.push([
@@ -1005,17 +1019,17 @@ small{color:red;}
       // Ensure table fits within page margins to avoid cropping on right side
       const tableWidth = pageWidth - margin * 2;
       doc.autoTable({
-        startY: startY + 92,
+        startY: metaBoxY + metaBoxH + 12,
         head: [['#', 'Description', 'Stamp', 'Gross', 'Less', 'Net Wt', 'Tunch', 'Wstg', 'Pcs', 'Fine']],
         body: tableBody,
         theme: 'grid',
         tableWidth: tableWidth,
-        styles: { fontSize: 9, textColor: 20, overflow: 'linebreak' },
-        headStyles: { fillColor: 255, textColor: 0, fontStyle: 'bold' },
+        styles: { fontSize: 9, textColor: 20, overflow: 'linebreak', lineColor: 0, lineWidth: 0.9 },
+        headStyles: { fillColor: 255, textColor: 0, fontStyle: 'bold', halign: 'center', lineWidth: 0.9 },
         margin: { left: margin, right: margin },
         columnStyles: {
           0: { cellWidth: 36, halign: 'center' },
-          1: { cellWidth: 180 },
+          1: { cellWidth: 160 },
           2: { cellWidth: 60 },
           3: { cellWidth: 70, halign: 'right' },
           4: { cellWidth: 60, halign: 'right' },
@@ -1080,6 +1094,8 @@ small{color:red;}
     function printPDF(providedOpening) {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 36;
       const totals = calculateTotals();
       const c = state.customers.find(x => x.id === state.currentVoucher.customerId);
       
@@ -1089,12 +1105,21 @@ small{color:red;}
 
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text("GOLD RECEIPT STATEMENT", 105, 15, { align: 'center' });
-      
+      doc.text("GOLD RECEIPT STATEMENT", pageWidth / 2, 20, { align: 'center' });
+
+      // Meta box for Account/Date
+      const metaY = 24;
+      const metaH = 40;
+
       doc.setFontSize(11);
-      doc.text("Account: " + c.name.toUpperCase(), 15, 25);
+      // Account bold on left
+      doc.setFont("helvetica", "bold");
+      doc.text("Account: " + (c ? c.name.toUpperCase() : ''), margin + 8, metaY + 18);
+      // Align Date above the Fine column
       doc.setFont("helvetica", "normal");
-      doc.text("Date: " + state.currentVoucher.date, 195, 25, { align: 'right' });
+      const colWidthsPrint = [36, 160, 60, 70, 60, 60, 60, 60, 40, 80];
+      const fineColRightPrint = margin + colWidthsPrint.reduce((s, w) => s + w, 0);
+      doc.text("Date: " + state.currentVoucher.date, fineColRightPrint - 4, metaY + 18, { align: 'right' });
 
       // Build main item rows
       const rows = state.currentVoucher.items.map((i, idx) => [
@@ -1121,8 +1146,6 @@ small{color:red;}
       ]);
 
       // 2. ADD MP DEDUCTION ROW
-      // indices: 0:item, 1:stamp, 2:gross, 3:less, 4:net, 5:tunch, 6:wastage, 7:pcs, 8:fine
-      // User requested: value in gross weight column, Tunch % in Tunch column and final value in Fine column.
       rows.push([
         { content: 'MP DEDUCTION FINE', colSpan: 3, styles: { fontStyle: 'bold', halign: 'right' } },
         { content: (state.currentVoucher.mpGross || 0).toFixed(3), styles: { fontStyle: 'bold' } }, // Index 3 (Gross)
@@ -1147,22 +1170,35 @@ small{color:red;}
       ]);
 
       doc.autoTable({
-        startY: 32,
+        startY: metaY + metaH + 10,
         head: [['#', 'Description', 'Stamp', 'Gross', 'Less', 'Net Wt', 'Tunch', 'Wstg', 'Pcs', 'Fine']],
         body: rows,
         theme: 'grid',
         styles: { 
           textColor: 20, 
           lineColor: 0, 
-          lineWidth: 0.1, 
-          fontSize: 8,
+          lineWidth: 0.9, 
+          fontSize: 9,
           cellPadding: 3
         },
         headStyles: { 
           fillColor: 255, 
           textColor: 0, 
           fontStyle: 'bold', 
-          lineWidth: 0.2
+          lineWidth: 0.9,
+          halign: 'center'
+        },
+        columnStyles: {
+          0: { cellWidth: 36, halign: 'center' },
+          1: { cellWidth: 160 },
+          2: { cellWidth: 60 },
+          3: { cellWidth: 70, halign: 'right' },
+          4: { cellWidth: 60, halign: 'right' },
+          5: { cellWidth: 60, halign: 'right' },
+          6: { cellWidth: 60, halign: 'center' },
+          7: { cellWidth: 60, halign: 'center' },
+          8: { cellWidth: 40, halign: 'center' },
+          9: { cellWidth: 80, halign: 'right' }
         },
         alternateRowStyles: {
           fillColor: 255
