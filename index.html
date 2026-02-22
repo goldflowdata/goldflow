@@ -920,78 +920,110 @@ small{color:red;}
 
     function generatePDFFromData(v, items, clientName, customerName) {
       const { jsPDF } = window.jspdf;
-      // Use landscape A4 so wide tables fit without truncation
+      // Landscape A4 for a wide table layout
       const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' });
       const pageWidth = doc.internal.pageSize.getWidth();
-      const margin = 40;
-      const usableWidth = pageWidth - margin * 2;
+      const margin = 36;
+      const startY = 48;
 
-      doc.setFontSize(16);
+      // Header area
+      doc.setFontSize(20);
       doc.setFont(undefined, 'bold');
-      doc.text((customerName || 'GOLDFLOW').toUpperCase(), pageWidth / 2, 40, { align: 'center' });
+      doc.text((customerName || 'GOLDFLOW').toUpperCase(), pageWidth / 2, startY, { align: 'center' });
       doc.setFontSize(12);
       doc.setFont(undefined, 'normal');
-      doc.text('VOUCHER RECEIPT', pageWidth / 2, 60, { align: 'center' });
-      doc.setFontSize(10);
-      doc.text(`Date: ${v.date || ''}`, 40, 80);
-      doc.text(`Voucher No: ${v.voucher_number || ''}`, pageWidth - 140, 80);
-      doc.text(`Account: ${clientName}`, 40, 100);
+      doc.text('VOUCHER RECEIPT', pageWidth / 2, startY + 20, { align: 'center' });
 
-      // Prepare item rows
-      const itemRows = (items || []).map((i, idx) => {
-        const gross = Number(i.gross_weight || 0);
-        const less = Number(i.less_weight || 0);
-        const net = (gross - less);
-        const finalW = Number(i.final_weight || 0);
-        return [idx + 1, i.description || '', i.stamp || '', gross.toFixed(3), less.toFixed(3), net.toFixed(3), (i.tunch || '').toString(), (i.wastage || '').toString(), (i.pcs || '').toString(), finalW.toFixed(3)];
+      // meta info
+      doc.setFontSize(10);
+      doc.text(`Date: ${v.date || ''}`, margin, startY + 48);
+      doc.text(`Voucher No: ${v.voucher_number || ''}`, pageWidth - margin - 120, startY + 48);
+      doc.text(`Account: ${clientName}`, margin, startY + 68);
+
+      // Build rows for items
+      const rows = (items || []).map((it, idx) => {
+        const gross = Number(it.gross_weight || 0).toFixed(3);
+        const less = Number(it.less_weight || 0).toFixed(3);
+        const net = (Number(it.gross_weight || 0) - Number(it.less_weight || 0)).toFixed(3);
+        const fin = Number(it.final_weight || 0).toFixed(3);
+        return [idx + 1, it.description || '', it.stamp || '', gross, less, net, (it.tunch || '').toString(), (it.wastage || '').toString(), (it.pcs || '').toString(), fin];
       });
 
-      // Totals
+      // compute totals
       const totals = {
-        gross: itemRows.reduce((s, r) => s + Number(r[3] || 0), 0),
-        less: itemRows.reduce((s, r) => s + Number(r[4] || 0), 0),
-        net: itemRows.reduce((s, r) => s + Number(r[5] || 0), 0),
-        fine: itemRows.reduce((s, r) => s + Number(r[9] || 0), 0)
+        gross: rows.reduce((s, r) => s + Number(r[3] || 0), 0),
+        less: rows.reduce((s, r) => s + Number(r[4] || 0), 0),
+        net: rows.reduce((s, r) => s + Number(r[5] || 0), 0),
+        fine: rows.reduce((s, r) => s + Number(r[9] || 0), 0)
       };
 
-      // MP deduction values from voucher record (snake_case from DB)
       const mpGross = Number(v.mp_gross || 0);
       const mpTunch = Number(v.mp_tunch || 0);
       const mpFine = Number(v.mp_fine || 0);
-
-      // Build table body
-      const body = [...itemRows];
-      // TOTALS row
-      body.push(['', 'TOTAL', '', totals.gross.toFixed(3), totals.less.toFixed(3), totals.net.toFixed(3), '', '', '', totals.fine.toFixed(3)]);
-      // MP DEDUCTION row (place mpGross under Gross, mpTunch under Tunch, mpFine under Fine)
-      body.push(['', 'MP DEDUCTION FINE', '', mpGross.toFixed(3), '', '', mpTunch.toFixed(2) + '%', '', '', { content: `(-) ${mpFine.toFixed(3)}`, styles: { textColor: [200, 0, 0] } }]);
-      // OPENING STOCK
       const opening = Number(v.opening_balance || 0);
-      body.push(['', 'OPENING STOCK BALANCE', '', '', '', '', '', '', '', opening.toFixed(3)]);
-      // NET CLOSING
       const closing = Number(v.closing_balance || 0);
-      body.push(['', 'NET CLOSING BALANCE', '', '', '', '', '', '', '', { content: closing.toFixed(3), styles: { fillColor: [245, 245, 245] } }]);
 
+      // summary rows: totals, mp deduction, opening, closing
+      const tableBody = rows.slice();
+      tableBody.push([
+        { content: '', styles: {} },
+        { content: 'TOTAL', colSpan: 2, styles: { fontStyle: 'bold', halign: 'center' } },
+        { content: totals.gross.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: totals.less.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: totals.net.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: '', styles: {} },
+        { content: '', styles: {} },
+        { content: '', styles: {} },
+        { content: totals.fine.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } }
+      ]);
+
+      tableBody.push([
+        { content: '', styles: {} },
+        { content: 'MP DEDUCTION FINE', colSpan: 2, styles: { fontStyle: 'bold', halign: 'center' } },
+        { content: mpGross.toFixed(3), styles: { halign: 'right' } },
+        { content: '', styles: {} },
+        { content: '', styles: {} },
+        { content: mpTunch.toFixed(2) + '%', styles: { halign: 'center', fontStyle: 'bold' } },
+        { content: '', styles: {} },
+        { content: '', styles: {} },
+        { content: `(-) ${mpFine.toFixed(3)}`, styles: { halign: 'right', textColor: [200, 0, 0], fontStyle: 'bold' } }
+      ]);
+
+      tableBody.push([
+        { content: '', styles: {} },
+        { content: 'OPENING STOCK BALANCE', colSpan: 8, styles: { halign: 'right', fontStyle: 'bold' } },
+        { content: opening.toFixed(3), styles: { halign: 'right', fontStyle: 'bold' } }
+      ]);
+
+      tableBody.push([
+        { content: '', styles: {} },
+        { content: 'NET CLOSING BALANCE', colSpan: 8, styles: { halign: 'right', fontStyle: 'bold' } },
+        { content: closing.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [245, 245, 245] } }
+      ]);
+
+      // render table
+      // Ensure table fits within page margins to avoid cropping on right side
+      const tableWidth = pageWidth - margin * 2;
       doc.autoTable({
-        startY: 120,
+        startY: startY + 92,
         head: [['#', 'Description', 'Stamp', 'Gross', 'Less', 'Net Wt', 'Tunch', 'Wstg', 'Pcs', 'Fine']],
-        body: body,
+        body: tableBody,
         theme: 'grid',
-        margin: { left: margin, right: margin },
-        tableWidth: usableWidth,
-        styles: { fontSize: 9, textColor: 20 },
+        tableWidth: tableWidth,
+        styles: { fontSize: 9, textColor: 20, overflow: 'linebreak' },
         headStyles: { fillColor: 255, textColor: 0, fontStyle: 'bold' },
+        margin: { left: margin, right: margin },
         columnStyles: {
-          0: { cellWidth: 36 },
-          1: { cellWidth: 220 },
-          2: { cellWidth: 70 },
-          3: { cellWidth: 70 },
-          4: { cellWidth: 70 },
-          5: { cellWidth: 70 },
-          6: { cellWidth: 60 },
-          7: { cellWidth: 60 },
-          8: { cellWidth: 50 },
-          9: { cellWidth: 70 }
+          0: { cellWidth: 36, halign: 'center' },
+          1: { cellWidth: 180 },
+          2: { cellWidth: 60 },
+          3: { cellWidth: 70, halign: 'right' },
+          4: { cellWidth: 60, halign: 'right' },
+          5: { cellWidth: 60, halign: 'right' },
+          6: { cellWidth: 60, halign: 'center' },
+          7: { cellWidth: 60, halign: 'center' },
+          8: { cellWidth: 40, halign: 'center' },
+          9: { cellWidth: 80, halign: 'right' }
         }
       });
 
