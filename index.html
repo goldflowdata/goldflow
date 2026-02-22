@@ -920,124 +920,103 @@ small{color:red;}
 
     function generatePDFFromData(v, items, clientName, customerName) {
       const { jsPDF } = window.jspdf;
-      // Landscape A4 for a wide table layout
-      const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' });
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const margin = 36;
-      const startY = 48;
+      const doc = new jsPDF();
 
-      // Header area (static title)
-      doc.setFontSize(16);
-      doc.setFont(undefined, 'bold');
-      doc.text('GOLD RECEIPT STATEMENT', pageWidth / 2, startY, { align: 'center' });
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("GOLD RECEIPT STATEMENT", 105, 15, { align: 'center' });
 
-      // Meta box: draw a rectangle and place Account (left, bold) and Date/Voucher (right)
-      const metaBoxY = startY + 20;
-      const metaBoxH = 56;
-
-      // Account on left (bold, slightly larger)
-      doc.setFontSize(12);
-      doc.setFont(undefined, 'bold');
-      doc.text(`Account: ${clientName}`, margin + 8, metaBoxY + 20);
-
-      // Date and Voucher on right (aligned above the Fine column)
-      // compute last column right edge from our columnStyles so the meta aligns above the Fine column
-      const colWidths = [36, 160, 60, 70, 60, 60, 60, 60, 40, 80];
-      const totalColsWidth = colWidths.reduce((s, w) => s + w, 0);
-      const fineColRightX = margin + totalColsWidth;
       doc.setFontSize(11);
-      doc.setFont(undefined, 'bold');
-      doc.text(`Date: ${v.date || ''}`, fineColRightX - 4, metaBoxY + 20, { align: 'right' });
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
-      doc.text(`Voucher No: ${v.voucher_number || ''}`, fineColRightX - 4, metaBoxY + 36, { align: 'right' });
+      doc.text("Account: " + (clientName ? String(clientName).toUpperCase() : ''), 15, 25);
+      doc.setFont("helvetica", "normal");
+      doc.text("Date: " + (v.date || ''), 195, 25, { align: 'right' });
 
-      // Build rows for items
+      // Build item rows from persisted voucher data
       const rows = (items || []).map((it, idx) => {
-        const gross = Number(it.gross_weight || 0).toFixed(3);
-        const less = Number(it.less_weight || 0).toFixed(3);
-        const net = (Number(it.gross_weight || 0) - Number(it.less_weight || 0)).toFixed(3);
-        const fin = Number(it.final_weight || 0).toFixed(3);
-        return [idx + 1, it.description || '', it.stamp || '', gross, less, net, (it.tunch || '').toString(), (it.wastage || '').toString(), (it.pcs || '').toString(), fin];
+        const gross = Number(it.gross_weight || 0);
+        const less = Number(it.less_weight || 0);
+        const net = gross - less;
+        const tunch = Number(it.tunch || 0);
+        const wastage = Number(it.wastage || 0);
+        const fin = Number(it.final_weight || 0);
+        return [
+          idx + 1,
+          it.description || '',
+          it.stamp || '',
+          gross.toFixed(3),
+          less.toFixed(3),
+          net.toFixed(3),
+          tunch.toFixed(2),
+          wastage.toFixed(2),
+          it.pcs ?? '',
+          fin.toFixed(3)
+        ];
       });
 
-      // compute totals
       const totals = {
         gross: rows.reduce((s, r) => s + Number(r[3] || 0), 0),
-        less: rows.reduce((s, r) => s + Number(r[4] || 0), 0),
         net: rows.reduce((s, r) => s + Number(r[5] || 0), 0),
         fine: rows.reduce((s, r) => s + Number(r[9] || 0), 0)
       };
 
       const mpGross = Number(v.mp_gross || 0);
-      const mpTunch = Number(v.mp_tunch || 0);
-      const mpFine = Number(v.mp_fine || 0);
+      const mpTunch = Number(v.mp_tunch || 100);
+      const mpFine = Number(v.mp_fine || (mpGross * (mpTunch / 100)));
       const opening = Number(v.opening_balance || 0);
       const closing = Number(v.closing_balance || 0);
 
-      // summary rows: totals, mp deduction, opening, closing
-      const tableBody = rows.slice();
-      tableBody.push([
+      rows.push([
+        { content: 'TOTAL', colSpan: 3, styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: totals.gross.toFixed(3), styles: { fontStyle: 'bold' } },
         '',
-        { content: 'TOTAL', styles: { fontStyle: 'bold' } },
-        '',
-        { content: totals.gross.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
-        { content: totals.less.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
-        { content: totals.net.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: totals.net.toFixed(3), styles: { fontStyle: 'bold' } },
         '',
         '',
         '',
-        { content: totals.fine.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } }
+        { content: totals.fine.toFixed(3), styles: { fontStyle: 'bold' } }
       ]);
 
-      tableBody.push([
-        '',
-        { content: 'MP DEDUCTION FINE', styles: { fontStyle: 'bold' } },
-        '',
-        { content: mpGross.toFixed(3), styles: { fontStyle: 'bold', halign: 'right' } },
+      rows.push([
+        { content: 'MP DEDUCTION FINE', colSpan: 3, styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: mpGross.toFixed(3), styles: { fontStyle: 'bold' } },
         '',
         '',
-        { content: mpTunch.toFixed(2) + '%', styles: { fontStyle: 'bold', halign: 'center' } },
+        { content: mpTunch.toFixed(2) + '%', styles: { fontStyle: 'bold' } },
         '',
         '',
-        { content: `(-) ${mpFine.toFixed(3)}`, styles: { fontStyle: 'bold', textColor: [200, 0, 0], halign: 'right' } }
+        { content: `(-) ${mpFine.toFixed(3)}`, styles: { fontStyle: 'bold', textColor: [200, 0, 0] } }
       ]);
 
-      tableBody.push([
-        { content: '', styles: {} },
-        { content: 'OPENING STOCK BALANCE', colSpan: 8, styles: { halign: 'right', fontStyle: 'bold' } },
-        { content: opening.toFixed(3), styles: { halign: 'right', fontStyle: 'bold' } }
+      rows.push([
+        { content: 'OPENING STOCK BALANCE', colSpan: 9, styles: { fontStyle: 'bold', halign: 'right' } },
+        { content: opening.toFixed(3), styles: { fontStyle: 'bold' } }
       ]);
 
-      tableBody.push([
-        { content: '', styles: {} },
-        { content: 'NET CLOSING BALANCE', colSpan: 8, styles: { halign: 'right', fontStyle: 'bold' } },
-        { content: closing.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [245, 245, 245] } }
+      rows.push([
+        { content: 'NET CLOSING BALANCE', colSpan: 9, styles: { fontStyle: 'bold', halign: 'right', fillColor: [245, 245, 245] } },
+        { content: closing.toFixed(3), styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }
       ]);
 
-      // render table
-      // Ensure table fits within page margins to avoid cropping on right side
-      const tableWidth = pageWidth - margin * 2;
       doc.autoTable({
-        startY: metaBoxY + metaBoxH + 12,
+        startY: 32,
         head: [['#', 'Description', 'Stamp', 'Gross', 'Less', 'Net Wt', 'Tunch', 'Wstg', 'Pcs', 'Fine']],
-        body: tableBody,
+        body: rows,
         theme: 'grid',
-        tableWidth: tableWidth,
-        styles: { fontSize: 9, textColor: 20, overflow: 'linebreak', lineColor: 0, lineWidth: 0.9 },
-        headStyles: { fillColor: 255, textColor: 0, fontStyle: 'bold', halign: 'center', lineWidth: 0.9 },
-        margin: { left: margin, right: margin },
-        columnStyles: {
-          0: { cellWidth: 36, halign: 'center' },
-          1: { cellWidth: 160 },
-          2: { cellWidth: 60 },
-          3: { cellWidth: 70, halign: 'right' },
-          4: { cellWidth: 60, halign: 'right' },
-          5: { cellWidth: 60, halign: 'right' },
-          6: { cellWidth: 60, halign: 'center' },
-          7: { cellWidth: 60, halign: 'center' },
-          8: { cellWidth: 40, halign: 'center' },
-          9: { cellWidth: 80, halign: 'right' }
+        styles: {
+          textColor: 20,
+          lineColor: 0,
+          lineWidth: 0.1,
+          fontSize: 8,
+          cellPadding: 3
+        },
+        headStyles: {
+          fillColor: 255,
+          textColor: 0,
+          fontStyle: 'bold',
+          lineWidth: 0.2
+        },
+        alternateRowStyles: {
+          fillColor: 255
         }
       });
 
