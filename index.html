@@ -871,15 +871,24 @@ small{color:red;}
         // assemble structure: customers -> clients -> vouchers
         customerIds.forEach(cid => {
           const cust = custMap[cid];
-          const custClients = clients.filter(cl => cl.customer_id === cid).map(cl => ({ ...cl, vouchers: (clientVouchers[cl.id] || []) }));
-          out.customers.push({ ...cust, clients: custClients });
+          // attach vouchers to each client and remove clients with no vouchers
+          const custClients = clients
+            .filter(cl => cl.customer_id === cid)
+            .map(cl => ({ ...cl, vouchers: (clientVouchers[cl.id] || []) }))
+            .filter(cl => cl.vouchers && cl.vouchers.length > 0);
+          // only include customers that have at least one client with vouchers
+          if (custClients.length > 0) out.customers.push({ ...cust, clients: custClients });
         });
 
         // Also include any clients (and their vouchers) whose customer row may be missing (edge-case)
         const orphanClientIds = clientIds.filter(id => !customers.find(c => c.id === clientMap[id].customer_id));
         orphanClientIds.forEach(cid => {
           const cl = clientMap[cid];
-          out.customers.push({ id: cl.customer_id || 'unknown', username: '(unknown customer)', clients: [{ ...cl, vouchers: (clientVouchers[cl.id] || []) }] });
+          const clVouchers = clientVouchers[cl.id] || [];
+          // only include orphan client if it has vouchers in the date range
+          if (clVouchers.length > 0) {
+            out.customers.push({ id: cl.customer_id || 'unknown', username: '(unknown customer)', clients: [{ ...cl, vouchers: clVouchers }] });
+          }
         });
 
       } catch (e) { console.error('loadReportRange failed', e); }
