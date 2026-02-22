@@ -920,24 +920,82 @@ small{color:red;}
 
     function generatePDFFromData(v, items, clientName, customerName) {
       const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
+      // Use landscape A4 so wide tables fit without truncation
+      const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 40;
+      const usableWidth = pageWidth - margin * 2;
+
       doc.setFontSize(16);
-      doc.text((customerName || 'GOLDFLOW').toUpperCase(), 105, 15, { align: 'center' });
+      doc.setFont(undefined, 'bold');
+      doc.text((customerName || 'GOLDFLOW').toUpperCase(), pageWidth / 2, 40, { align: 'center' });
       doc.setFontSize(12);
-      doc.text('VOUCHER RECEIPT', 105, 25, { align: 'center' });
+      doc.setFont(undefined, 'normal');
+      doc.text('VOUCHER RECEIPT', pageWidth / 2, 60, { align: 'center' });
       doc.setFontSize(10);
-      doc.text(`Date: ${v.date || ''} | Voucher No: ${v.voucher_number || ''}`, 15, 35);
-      doc.text(`Customer: ${clientName}`, 15, 42);
+      doc.text(`Date: ${v.date || ''}`, 40, 80);
+      doc.text(`Voucher No: ${v.voucher_number || ''}`, pageWidth - 140, 80);
+      doc.text(`Account: ${clientName}`, 40, 100);
 
-      const rows = (items || []).map((i, idx) => [idx+1, i.description || '', i.stamp || '', i.pcs || '', (i.gross_weight||0).toFixed(3), (i.less_weight||0).toFixed(3), ((i.gross_weight||0)-(i.less_weight||0)).toFixed(3), (i.tunch||'').toString(), (i.wastage||'').toString(), (i.final_weight||0).toFixed(3)]);
-      rows.push(['', 'TOTALS', '', '',
-        rows.reduce((a,r)=>a+Number(r[4]||0),0).toFixed(3),
-        rows.reduce((a,r)=>a+Number(r[5]||0),0).toFixed(3),
-        rows.reduce((a,r)=>a+Number(r[6]||0),0).toFixed(3), '', '', rows.reduce((a,r)=>a+Number(r[9]||0),0).toFixed(3)
-      ]);
+      // Prepare item rows
+      const itemRows = (items || []).map((i, idx) => {
+        const gross = Number(i.gross_weight || 0);
+        const less = Number(i.less_weight || 0);
+        const net = (gross - less);
+        const finalW = Number(i.final_weight || 0);
+        return [idx + 1, i.description || '', i.stamp || '', gross.toFixed(3), less.toFixed(3), net.toFixed(3), (i.tunch || '').toString(), (i.wastage || '').toString(), (i.pcs || '').toString(), finalW.toFixed(3)];
+      });
 
-      doc.autoTable({ startY: 50, head: [['#','Desc','Stamp','Pcs','Gross','Less','Net','Tunch%','Wstg','Final Wt']], body: rows, styles:{fontSize:8} });
-      doc.save(`Voucher_${clientName.replace(/\s+/g,'_')}_${v.date || ''}.pdf`);
+      // Totals
+      const totals = {
+        gross: itemRows.reduce((s, r) => s + Number(r[3] || 0), 0),
+        less: itemRows.reduce((s, r) => s + Number(r[4] || 0), 0),
+        net: itemRows.reduce((s, r) => s + Number(r[5] || 0), 0),
+        fine: itemRows.reduce((s, r) => s + Number(r[9] || 0), 0)
+      };
+
+      // MP deduction values from voucher record (snake_case from DB)
+      const mpGross = Number(v.mp_gross || 0);
+      const mpTunch = Number(v.mp_tunch || 0);
+      const mpFine = Number(v.mp_fine || 0);
+
+      // Build table body
+      const body = [...itemRows];
+      // TOTALS row
+      body.push(['', 'TOTAL', '', totals.gross.toFixed(3), totals.less.toFixed(3), totals.net.toFixed(3), '', '', '', totals.fine.toFixed(3)]);
+      // MP DEDUCTION row (place mpGross under Gross, mpTunch under Tunch, mpFine under Fine)
+      body.push(['', 'MP DEDUCTION FINE', '', mpGross.toFixed(3), '', '', mpTunch.toFixed(2) + '%', '', '', { content: `(-) ${mpFine.toFixed(3)}`, styles: { textColor: [200, 0, 0] } }]);
+      // OPENING STOCK
+      const opening = Number(v.opening_balance || 0);
+      body.push(['', 'OPENING STOCK BALANCE', '', '', '', '', '', '', '', opening.toFixed(3)]);
+      // NET CLOSING
+      const closing = Number(v.closing_balance || 0);
+      body.push(['', 'NET CLOSING BALANCE', '', '', '', '', '', '', '', { content: closing.toFixed(3), styles: { fillColor: [245, 245, 245] } }]);
+
+      doc.autoTable({
+        startY: 120,
+        head: [['#', 'Description', 'Stamp', 'Gross', 'Less', 'Net Wt', 'Tunch', 'Wstg', 'Pcs', 'Fine']],
+        body: body,
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+        tableWidth: usableWidth,
+        styles: { fontSize: 9, textColor: 20 },
+        headStyles: { fillColor: 255, textColor: 0, fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: 36 },
+          1: { cellWidth: 220 },
+          2: { cellWidth: 70 },
+          3: { cellWidth: 70 },
+          4: { cellWidth: 70 },
+          5: { cellWidth: 70 },
+          6: { cellWidth: 60 },
+          7: { cellWidth: 60 },
+          8: { cellWidth: 50 },
+          9: { cellWidth: 70 }
+        }
+      });
+
+      doc.save(`Voucher_${clientName.replace(/\s+/g, '_')}_${v.date || ''}.pdf`);
     }
 
     function renderReport(container) {
