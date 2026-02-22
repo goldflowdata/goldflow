@@ -229,6 +229,23 @@ small{color:red;}
 .client-name { font-size: 14px; font-weight: 800; color: #0b3d91; margin-top: 8px; letter-spacing:0.2px; }
 /* Reports: customer name styling */
 .customer-name { font-size: 16px; font-weight: 900; color: #111827; margin-top: 4px; letter-spacing:0.2px; }
+/* Reports: layout & responsiveness */
+.report-filters { display:flex; gap:0.75rem; margin-bottom:1rem; align-items:center; flex-wrap:wrap; }
+.report-filters .filter-col { flex:1; min-width:120px; }
+.report-filters .filter-action { flex:0 0 140px; min-width:120px; }
+.voucher-row { display:flex; justify-content:space-between; align-items:center; margin-top:0.5rem; gap:0.5rem; }
+.voucher-row .amount { font-weight:900; }
+.report-print { white-space:nowrap; }
+@media (max-width: 480px) {
+  .report-filters { flex-direction:column; align-items:stretch; }
+  .report-filters .filter-action { width:100%; flex: none; }
+  .voucher-row { flex-direction:column; align-items:flex-start; }
+  .voucher-row .amount { margin-top:4px; }
+  .card { padding:1rem; }
+}
+/* Client entry separator */
+.client-entry { padding: 0.6rem 0; border-bottom: 2px solid #e6eef8; margin-bottom: 0.5rem; }
+.client-entry:last-child { border-bottom: none; margin-bottom: 0; }
 </style>
 <script type="importmap">
 {
@@ -921,19 +938,19 @@ small{color:red;}
       const toVal = state.reportTo || today;
       container.innerHTML = `
         <div class="card">
-          <div style="display:flex; gap:0.75rem; margin-bottom:1rem; align-items:center">
-            <div style="flex:1">
-              <label>FROM</label>
-              <input id="report-from" type="date" value="${fromVal}" onchange="state.reportFrom=this.value">
-            </div>
-            <div style="flex:1">
-              <label>TO</label>
-              <input id="report-to" type="date" value="${toVal}" onchange="state.reportTo=this.value">
-            </div>
-            <div style="flex:0 0 140px; align-self:flex-end">
-              <button class="primary" onclick="applyReportFilter()">Filter</button>
-            </div>
-          </div>
+          <div class="report-filters">
+                <div class="filter-col">
+                  <label>FROM</label>
+                  <input id="report-from" type="date" value="${fromVal}" onchange="state.reportFrom=this.value">
+                </div>
+                <div class="filter-col">
+                  <label>TO</label>
+                  <input id="report-to" type="date" value="${toVal}" onchange="state.reportTo=this.value">
+                </div>
+                <div class="filter-action">
+                  <button class="primary" onclick="applyReportFilter()">Filter</button>
+                </div>
+              </div>
         </div>
         <div style="margin-top:1rem">
           ${r.customers.length === 0 ? '<div style="padding:1rem;color:#94a3b8">No Records</div>' : r.customers.map(c => `
@@ -943,13 +960,13 @@ small{color:red;}
                   </div>
               <div style="margin-top:0.5rem">
                 ${c.clients.map(cl => `
-                  <div style="padding:0.5rem 0; border-top:1px dashed #f1f5f9">
+                  <div class="client-entry">
                     <div class="client-name">${cl.name}</div>
                     ${cl.vouchers.length === 0 ? '<div style="color:#94a3b8">No vouchers</div>' : cl.vouchers.map(v => `
-                      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.5rem">
+                      <div class="voucher-row">
                         <div>${v.date} — Voucher #${v.voucher_number}</div>
-                        <div style="font-weight:900">${(v.closing_balance||'').toString()}</div>
-                        <div><button class="gold" onclick="printVoucherById('${v.id}')">Print Receipt</button></div>
+                        <div class="amount">${(v.closing_balance||'').toString()}</div>
+                        <div class="report-print"><button class="gold" onclick="printVoucherById('${v.id}')">Print Receipt</button></div>
                       </div>
                     `).join('')}
                   </div>
