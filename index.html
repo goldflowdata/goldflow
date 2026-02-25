@@ -1241,12 +1241,23 @@ async function login() {
   const err = document.getElementById('errorMsg');
   err.textContent = '';
 
+  if (!navigator.onLine) {
+    err.textContent = 'Check your network/internet connection';
+    return;
+  }
+
   // Try admin login first (JS client)
   let { data, error } = await sbAuth.from('admin')
     .select('*')
     .eq('username', u)
     .eq('password', p)
     .limit(1);
+
+  if (error) {
+    console.error('Admin login error:', error);
+    err.textContent = 'Check your network/internet connection';
+    return;
+  }
 
   // If you want to use REST API, call loginAdminREST(u, p) instead.
 
@@ -1263,6 +1274,12 @@ async function login() {
     .eq('username', u)
     .eq('password', p)
     .limit(1));
+
+  if (error) {
+    console.error('Customer login error:', error);
+    err.textContent = 'Check your network/internet connection';
+    return;
+  }
 
   if (data && data.length > 0) {
     const user = { ...data[0], role: 'user' };
