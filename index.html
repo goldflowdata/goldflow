@@ -346,7 +346,11 @@ small{color:red;}
     // --- SUPABASE DB HELPERS ---
     const SESSION_KEY = 'gf_session';
     const IDLE_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes inactivity logout
+    const SESSION_HEARTBEAT_MS = 60 * 1000; // refresh lock every 1 minute
+    const SESSION_LOCK_TTL_MS = 2 * 60 * 1000; // stale lock expires quickly after tab close
+    const SESSION_LOCK_TABLE = 'active_sessions';
     let idleLogoutTimer = null;
+    let sessionHeartbeatTimer = null;
     let idleHandlersAttached = false;
 
     function getSession() {
@@ -378,6 +382,111 @@ small{color:red;}
       localStorage.removeItem(SESSION_KEY);
     }
 
+    function generateSessionId() {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+      }
+      return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    function getSessionPrincipal(user) {
+      return {
+        user_type: user.role === 'admin' ? 'admin' : 'user',
+        user_id: String(user.id)
+      };
+    }
+
+    function isMissingLockTableError(error) {
+      if (!error) return false;
+      const msg = String(error.message || '').toLowerCase();
+      return error.code === '42P01' || (msg.includes('does not exist') && msg.includes(SESSION_LOCK_TABLE));
+    }
+
+    function getSessionExpiryISO() {
+      return new Date(Date.now() + SESSION_LOCK_TTL_MS).toISOString();
+    }
+
+    async function acquireSessionLock(user) {
+      const sid = user && user.sessionId;
+      if (!user || !user.id || !sid) return { ok: false, reason: 'invalid_session' };
+      const principal = getSessionPrincipal(user);
+
+      const { data: existing, error: fetchErr } = await sbAuth
+        .from(SESSION_LOCK_TABLE)
+        .select('session_id,expires_at')
+        .eq('user_type', principal.user_type)
+        .eq('user_id', principal.user_id)
+        .maybeSingle();
+
+      if (fetchErr) {
+        if (isMissingLockTableError(fetchErr)) return { ok: false, reason: 'lock_table_missing' };
+        console.error('Session lock read error:', fetchErr);
+        return { ok: false, reason: 'lock_read_error' };
+      }
+
+      if (existing && existing.session_id && existing.session_id !== sid) {
+        const expiresAt = existing.expires_at ? new Date(existing.expires_at).getTime() : 0;
+        if (expiresAt > Date.now()) {
+          return { ok: false, reason: 'already_logged_in' };
+        }
+      }
+
+      const payload = {
+        user_type: principal.user_type,
+        user_id: principal.user_id,
+        session_id: sid,
+        last_seen_at: new Date().toISOString(),
+        expires_at: getSessionExpiryISO()
+      };
+
+      const { error: upsertErr } = await sbAuth
+        .from(SESSION_LOCK_TABLE)
+        .upsert(payload, { onConflict: 'user_type,user_id' });
+
+      if (upsertErr) {
+        if (isMissingLockTableError(upsertErr)) return { ok: false, reason: 'lock_table_missing' };
+        console.error('Session lock upsert error:', upsertErr);
+        return { ok: false, reason: 'lock_write_error' };
+      }
+
+      return { ok: true };
+    }
+
+    async function refreshSessionLock() {
+      const activeSession = getSession();
+      if (!activeSession || !activeSession.id || !activeSession.sessionId) return;
+      const principal = getSessionPrincipal(activeSession);
+      await sbAuth
+        .from(SESSION_LOCK_TABLE)
+        .update({
+          last_seen_at: new Date().toISOString(),
+          expires_at: getSessionExpiryISO()
+        })
+        .eq('user_type', principal.user_type)
+        .eq('user_id', principal.user_id)
+        .eq('session_id', activeSession.sessionId);
+    }
+
+    async function releaseSessionLock() {
+      const activeSession = getSession();
+      if (!activeSession || !activeSession.id || !activeSession.sessionId) return;
+      const principal = getSessionPrincipal(activeSession);
+      await sbAuth
+        .from(SESSION_LOCK_TABLE)
+        .delete()
+        .eq('user_type', principal.user_type)
+        .eq('user_id', principal.user_id)
+        .eq('session_id', activeSession.sessionId);
+    }
+
+    function startSessionHeartbeat() {
+      if (sessionHeartbeatTimer) clearInterval(sessionHeartbeatTimer);
+      sessionHeartbeatTimer = setInterval(() => {
+        refreshSessionLock();
+      }, SESSION_HEARTBEAT_MS);
+      refreshSessionLock();
+    }
+
     function resetInactivityTimer() {
       const activeSession = getSession();
       if (!activeSession) return;
@@ -395,6 +504,7 @@ small{color:red;}
         idleHandlersAttached = true;
       }
       resetInactivityTimer();
+      startSessionHeartbeat();
     }
 
     // Returns the logged-in user object (admin or customer)
@@ -1314,7 +1424,18 @@ async function login() {
   // If you want to use REST API, call loginAdminREST(u, p) instead.
 
   if (data && data.length > 0) {
-    const user = { ...data[0], role: 'admin' };
+    const user = { ...data[0], role: 'admin', sessionId: generateSessionId() };
+    const lock = await acquireSessionLock(user);
+    if (!lock.ok) {
+      if (lock.reason === 'already_logged_in') {
+        err.textContent = 'Already logged in on another device';
+      } else if (lock.reason === 'lock_table_missing') {
+        err.textContent = 'Session lock not configured. Contact admin.';
+      } else {
+        err.textContent = 'Unable to create session. Check network.';
+      }
+      return;
+    }
     setSession(user);
     showApp(user);
     return;
@@ -1334,11 +1455,22 @@ async function login() {
   }
 
   if (data && data.length > 0) {
-    const user = { ...data[0], role: 'user' };
+    const user = { ...data[0], role: 'user', sessionId: generateSessionId() };
     // Check expiry
     const today = new Date().toISOString().split('T')[0];
     if (user.expiry && today > user.expiry) {
       err.textContent = 'Account expired. Contact admin.';
+      return;
+    }
+    const lock = await acquireSessionLock(user);
+    if (!lock.ok) {
+      if (lock.reason === 'already_logged_in') {
+        err.textContent = 'Already logged in on another device';
+      } else if (lock.reason === 'lock_table_missing') {
+        err.textContent = 'Session lock not configured. Contact admin.';
+      } else {
+        err.textContent = 'Unable to create session. Check network.';
+      }
       return;
     }
     setSession(user);
@@ -1422,8 +1554,10 @@ async function renderUsers() {
 }
 
 /* ===== LOGOUT ===== */
-function logout() {
+async function logout() {
   if (idleLogoutTimer) clearTimeout(idleLogoutTimer);
+  if (sessionHeartbeatTimer) clearInterval(sessionHeartbeatTimer);
+  await releaseSessionLock();
   clearSession();
   location.reload();
 }
@@ -1443,13 +1577,18 @@ function logout() {
       data = res.data;
     }
     if (data && data.length > 0) {
-      const user = { ...data[0], role: session.role };
+      const user = { ...data[0], role: session.role, sessionId: session.sessionId || generateSessionId() };
       if (user.role === 'user') {
         const today = new Date().toISOString().split('T')[0];
         if (user.expiry && today > user.expiry) {
           clearSession();
           return; // expired, stay on login
         }
+      }
+      const lock = await acquireSessionLock(user);
+      if (!lock.ok) {
+        clearSession();
+        return;
       }
       // Update local session with latest data
       setSession(user);
