@@ -344,10 +344,62 @@ small{color:red;}
     };
 
     // --- SUPABASE DB HELPERS ---
+    const SESSION_KEY = 'gf_session';
+    const IDLE_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes inactivity logout
+    let idleLogoutTimer = null;
+    let idleHandlersAttached = false;
+
+    function getSession() {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) return JSON.parse(raw);
+        // One-time fallback for old sessions saved in localStorage
+        const oldRaw = localStorage.getItem(SESSION_KEY);
+        if (oldRaw) {
+          const parsed = JSON.parse(oldRaw);
+          sessionStorage.setItem(SESSION_KEY, oldRaw);
+          localStorage.removeItem(SESSION_KEY);
+          return parsed;
+        }
+      } catch (e) {
+        console.error('Session parse error:', e);
+      }
+      return null;
+    }
+
+    function setSession(user) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+      // Ensure session does not persist after tab/browser close
+      localStorage.removeItem(SESSION_KEY);
+    }
+
+    function clearSession() {
+      sessionStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(SESSION_KEY);
+    }
+
+    function resetInactivityTimer() {
+      const activeSession = getSession();
+      if (!activeSession) return;
+      if (idleLogoutTimer) clearTimeout(idleLogoutTimer);
+      idleLogoutTimer = setTimeout(() => {
+        alert('Logged out due to inactivity');
+        logout();
+      }, IDLE_TIMEOUT_MS);
+    }
+
+    function startInactivityTracking() {
+      if (!idleHandlersAttached) {
+        const events = ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'];
+        events.forEach(evt => window.addEventListener(evt, resetInactivityTimer, { passive: true }));
+        idleHandlersAttached = true;
+      }
+      resetInactivityTimer();
+    }
 
     // Returns the logged-in user object (admin or customer)
     function getLoggedInUser() {
-      return JSON.parse(localStorage.getItem('gf_session'));
+      return getSession();
     }
 
     function getLoggedInUserId() {
@@ -1263,7 +1315,7 @@ async function login() {
 
   if (data && data.length > 0) {
     const user = { ...data[0], role: 'admin' };
-    localStorage.setItem('gf_session', JSON.stringify(user));
+    setSession(user);
     showApp(user);
     return;
   }
@@ -1289,7 +1341,7 @@ async function login() {
       err.textContent = 'Account expired. Contact admin.';
       return;
     }
-    localStorage.setItem('gf_session', JSON.stringify(user));
+    setSession(user);
     showApp(user);
     return;
   }
@@ -1301,6 +1353,7 @@ function showApp(user) {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('currentUser').textContent = user.username;
+  startInactivityTracking();
 
   if (user.role === 'admin') {
     document.getElementById('adminPanel').classList.remove('hidden');
@@ -1370,13 +1423,14 @@ async function renderUsers() {
 
 /* ===== LOGOUT ===== */
 function logout() {
-  localStorage.removeItem('gf_session');
+  if (idleLogoutTimer) clearTimeout(idleLogoutTimer);
+  clearSession();
   location.reload();
 }
 
 /* ===== AUTO LOGIN ===== */
 (async function autoLogin() {
-  const session = JSON.parse(localStorage.getItem('gf_session'));
+  const session = getSession();
   if (session && session.id) {
     let data = null;
     if (session.role === 'admin') {
@@ -1393,15 +1447,15 @@ function logout() {
       if (user.role === 'user') {
         const today = new Date().toISOString().split('T')[0];
         if (user.expiry && today > user.expiry) {
-          localStorage.removeItem('gf_session');
+          clearSession();
           return; // expired, stay on login
         }
       }
       // Update local session with latest data
-      localStorage.setItem('gf_session', JSON.stringify(user));
+      setSession(user);
       showApp(user);
     } else {
-      localStorage.removeItem('gf_session');
+      clearSession();
     }
   }
 })();
