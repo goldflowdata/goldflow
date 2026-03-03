@@ -345,9 +345,87 @@ small{color:red;}
 
     // --- SUPABASE DB HELPERS ---
     const SESSION_KEY = 'gf_session';
+    const SESSION_NETWORK_KEY = 'gf_session_network';
     const IDLE_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes inactivity logout
     let idleLogoutTimer = null;
     let idleHandlersAttached = false;
+    let networkHandlersAttached = false;
+    let lastNetworkSignature = '';
+
+    function getConnectionInfo() {
+      return navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
+    }
+
+    // Keep this simple and stable: online status + reported transport type.
+    function getNetworkSignature() {
+      const conn = getConnectionInfo();
+      const type = conn && conn.type ? conn.type : 'unknown';
+      const online = navigator.onLine ? 'online' : 'offline';
+      return `${online}|${type}`;
+    }
+
+    function setSessionNetworkSignature(sig) {
+      sessionStorage.setItem(SESSION_NETWORK_KEY, sig);
+      localStorage.removeItem(SESSION_NETWORK_KEY);
+    }
+
+    function getSessionNetworkSignature() {
+      const sig = sessionStorage.getItem(SESSION_NETWORK_KEY);
+      if (sig) return sig;
+      const oldSig = localStorage.getItem(SESSION_NETWORK_KEY);
+      if (oldSig) {
+        sessionStorage.setItem(SESSION_NETWORK_KEY, oldSig);
+        localStorage.removeItem(SESSION_NETWORK_KEY);
+        return oldSig;
+      }
+      return '';
+    }
+
+    function hasSessionNetworkChanged() {
+      const savedSig = getSessionNetworkSignature();
+      if (!savedSig) return false;
+      return savedSig !== getNetworkSignature();
+    }
+
+    function forceNetworkRelogin() {
+      if (!getSession()) return;
+      alert('Network changed. Please login again.');
+      logout();
+    }
+
+    function checkNetworkSession() {
+      if (!getSession()) return;
+      if (hasSessionNetworkChanged()) {
+        forceNetworkRelogin();
+        return;
+      }
+      lastNetworkSignature = getNetworkSignature();
+    }
+
+    function startNetworkTracking() {
+      if (networkHandlersAttached) return;
+      const onMaybeNetworkChange = () => {
+        const nowSig = getNetworkSignature();
+        if (nowSig === lastNetworkSignature) return;
+        lastNetworkSignature = nowSig;
+        checkNetworkSession();
+      };
+
+      window.addEventListener('online', onMaybeNetworkChange);
+      window.addEventListener('offline', onMaybeNetworkChange);
+      window.addEventListener('focus', onMaybeNetworkChange);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') onMaybeNetworkChange();
+      });
+
+      const conn = getConnectionInfo();
+      if (conn && typeof conn.addEventListener === 'function') {
+        conn.addEventListener('change', onMaybeNetworkChange);
+      }
+
+      lastNetworkSignature = getNetworkSignature();
+      networkHandlersAttached = true;
+    }
 
     function getSession() {
       try {
@@ -369,13 +447,17 @@ small{color:red;}
 
     function setSession(user) {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+      setSessionNetworkSignature(getNetworkSignature());
+      lastNetworkSignature = getNetworkSignature();
       // Ensure session does not persist after tab/browser close
       localStorage.removeItem(SESSION_KEY);
     }
 
     function clearSession() {
       sessionStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(SESSION_NETWORK_KEY);
       localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(SESSION_NETWORK_KEY);
     }
 
     function resetInactivityTimer() {
@@ -1291,82 +1373,62 @@ async function login() {
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value.trim();
   const err = document.getElementById('errorMsg');
-  err.textContent = 'Logging in...';
-
-  if (!u || !p) {
-    err.textContent = 'Enter username and password';
-    return;
-  }
+  err.textContent = '';
 
   if (!navigator.onLine) {
     err.textContent = 'Check your network/internet connection';
     return;
   }
 
-  // Wait a moment for WiFi to stabilize
-  await new Promise(resolve => setTimeout(resolve, 500));
+  // Try admin login first (JS client)
+  let { data, error } = await sbAuth.from('admin')
+    .select('*')
+    .eq('username', u)
+    .eq('password', p)
+    .limit(1);
 
-  // Retry logic for WiFi connections
-  const maxRetries = 3;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      // Try admin login first (JS client)
-      let { data, error } = await sbAuth.from('admin')
-        .select('*')
-        .eq('username', u)
-        .eq('password', p)
-        .limit(1);
-
-      if (!error && data && data.length > 0) {
-        const user = { ...data[0], role: 'admin' };
-        setSession(user);
-        showApp(user);
-        return;
-      }
-
-      // Try customer login
-      ({ data, error } = await sbAuth.from('customers')
-        .select('*')
-        .eq('username', u)
-        .eq('password', p)
-        .limit(1));
-
-      if (!error && data && data.length > 0) {
-        const user = { ...data[0], role: 'user' };
-        // Check expiry
-        const today = new Date().toISOString().split('T')[0];
-        if (user.expiry && today > user.expiry) {
-          err.textContent = 'Account expired. Contact admin.';
-          return;
-        }
-        setSession(user);
-        showApp(user);
-        return;
-      }
-
-      // If no error and no matching user, credentials are invalid
-      if (!error) {
-        err.textContent = 'Invalid credentials';
-        return;
-      }
-
-      // If we got an error, this might be network-related, retry
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 800));
-        continue;
-      }
-
-    } catch (e) {
-      console.error('Login attempt ' + attempt + ' error:', e);
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 800));
-        continue;
-      }
-    }
+  if (error) {
+    console.error('Admin login error:', error);
+    err.textContent = 'Check your network/internet connection';
+    return;
   }
 
-  // All retries failed
-  err.textContent = 'Connection failed. Please check your WiFi and try again.';
+  // If you want to use REST API, call loginAdminREST(u, p) instead.
+
+  if (data && data.length > 0) {
+    const user = { ...data[0], role: 'admin' };
+    setSession(user);
+    showApp(user);
+    return;
+  }
+
+  // Try customer login
+  ({ data, error } = await sbAuth.from('customers')
+    .select('*')
+    .eq('username', u)
+    .eq('password', p)
+    .limit(1));
+
+  if (error) {
+    console.error('Customer login error:', error);
+    err.textContent = 'Check your network/internet connection';
+    return;
+  }
+
+  if (data && data.length > 0) {
+    const user = { ...data[0], role: 'user' };
+    // Check expiry
+    const today = new Date().toISOString().split('T')[0];
+    if (user.expiry && today > user.expiry) {
+      err.textContent = 'Account expired. Contact admin.';
+      return;
+    }
+    setSession(user);
+    showApp(user);
+    return;
+  }
+
+  err.textContent = 'Invalid credentials';
 }
 
 function showApp(user) {
@@ -1374,6 +1436,8 @@ function showApp(user) {
   document.getElementById('app').style.display = 'block';
   document.getElementById('currentUser').textContent = user.username;
   startInactivityTracking();
+  startNetworkTracking();
+  checkNetworkSession();
 
   if (user.role === 'admin') {
     document.getElementById('adminPanel').classList.remove('hidden');
@@ -1452,6 +1516,10 @@ function logout() {
 (async function autoLogin() {
   const session = getSession();
   if (session && session.id) {
+    if (hasSessionNetworkChanged()) {
+      clearSession();
+      return;
+    }
     let data = null;
     if (session.role === 'admin') {
       // Re-verify admin
