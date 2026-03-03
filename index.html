@@ -318,7 +318,7 @@ small{color:red;}
     // ⚠️ REPLACE these with your actual Supabase project credentials
     const SUPABASE_URL = 'https://lygqtpzuvpicedusupte.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5Z3F0cHp1dnBpY2VkdXN1cHRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2MzI4OTgsImV4cCI6MjA4NzIwODg5OH0.reujLaJXLtLsEX4Z7aOvs-yb6MfnchmiTgJX1ja7nD0';
-    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // Helper to reference schema
     const schema = 'GoldflowDB';
@@ -351,6 +351,49 @@ small{color:red;}
     let idleHandlersAttached = false;
     let networkHandlersAttached = false;
     let lastNetworkSignature = '';
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function recreateSupabaseClient() {
+      sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+
+    function isTransientSupabaseError(error) {
+      if (!error) return false;
+      const status = Number(error.status || 0);
+      const msg = String(error.message || error.details || '').toLowerCase();
+      if (status === 0 || status >= 500) return true;
+      return msg.includes('failed to fetch') ||
+             msg.includes('networkerror') ||
+             msg.includes('network error') ||
+             msg.includes('load failed') ||
+             msg.includes('timed out') ||
+             msg.includes('fetch');
+    }
+
+    async function withSupabaseRetry(queryFn, maxRetries = 3) {
+      let attempt = 0;
+      while (attempt <= maxRetries) {
+        try {
+          const result = await queryFn();
+          if (result && result.error && isTransientSupabaseError(result.error) && attempt < maxRetries) {
+            attempt++;
+            recreateSupabaseClient();
+            await sleep(300 * attempt);
+            continue;
+          }
+          return result;
+        } catch (e) {
+          if (attempt >= maxRetries) throw e;
+          attempt++;
+          recreateSupabaseClient();
+          await sleep(300 * attempt);
+        }
+      }
+      return { data: null, error: { message: 'Request failed after retries' } };
+    }
 
     function getConnectionInfo() {
       return navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
@@ -408,6 +451,7 @@ small{color:red;}
         const nowSig = getNetworkSignature();
         if (nowSig === lastNetworkSignature) return;
         lastNetworkSignature = nowSig;
+        recreateSupabaseClient();
         checkNetworkSession();
       };
 
@@ -1324,8 +1368,6 @@ small{color:red;}
 
 <script>
 /* ===== SUPABASE AUTH HELPERS (reuse same client from inner script) ===== */
-const sbAuth = sb; // reuse the Supabase client already created above
-
 let users = []; // loaded from Supabase
 
 // --- REST API USAGE NOTE ---
@@ -1343,11 +1385,17 @@ let users = []; // loaded from Supabase
 /* ===== SEED DEFAULT ADMIN (runs once on first ever load) ===== */
 async function seedDefaultAdmin() {
   // Supabase JS client supports schema.table notation, but REST API does not.
-  const { data } = await sbAuth.from('admin').select('id').eq('username', 'admin').limit(1);
+  const { data } = await withSupabaseRetry(
+    () => sb.from('admin').select('id').eq('username', 'admin').limit(1),
+    2
+  );
   if (!data || data.length === 0) {
-    await sbAuth.from('admin').insert([
+    await withSupabaseRetry(
+      () => sb.from('admin').insert([
       { username: 'admin', password: 'admin123' }
-    ]);
+      ]),
+      2
+    );
   }
 }
 seedDefaultAdmin();
@@ -1375,21 +1423,21 @@ async function login() {
   const err = document.getElementById('errorMsg');
   err.textContent = '';
 
-  if (!navigator.onLine) {
-    err.textContent = 'Check your network/internet connection';
-    return;
-  }
+  recreateSupabaseClient();
 
   // Try admin login first (JS client)
-  let { data, error } = await sbAuth.from('admin')
-    .select('*')
-    .eq('username', u)
-    .eq('password', p)
-    .limit(1);
+  let { data, error } = await withSupabaseRetry(
+    () => sb.from('admin')
+      .select('*')
+      .eq('username', u)
+      .eq('password', p)
+      .limit(1),
+    3
+  );
 
   if (error) {
     console.error('Admin login error:', error);
-    err.textContent = 'Check your network/internet connection';
+    err.textContent = 'Login failed. Please retry in 2-3 seconds.';
     return;
   }
 
@@ -1403,15 +1451,18 @@ async function login() {
   }
 
   // Try customer login
-  ({ data, error } = await sbAuth.from('customers')
-    .select('*')
-    .eq('username', u)
-    .eq('password', p)
-    .limit(1));
+  ({ data, error } = await withSupabaseRetry(
+    () => sb.from('customers')
+      .select('*')
+      .eq('username', u)
+      .eq('password', p)
+      .limit(1),
+    3
+  ));
 
   if (error) {
     console.error('Customer login error:', error);
-    err.textContent = 'Check your network/internet connection';
+    err.textContent = 'Login failed. Please retry in 2-3 seconds.';
     return;
   }
 
@@ -1458,10 +1509,16 @@ async function addUser() {
   if (!u || !p || !e) return alert('Fill all fields');
 
   // Check if user already exists
-  const { data: existing } = await sbAuth.from('customers').select('id').eq('username', u).limit(1);
+  const { data: existing } = await withSupabaseRetry(
+    () => sb.from('customers').select('id').eq('username', u).limit(1),
+    2
+  );
   if (existing && existing.length > 0) return alert('User exists');
 
-  const { error } = await sbAuth.from('customers').insert({ username: u, password: p, expiry: e });
+  const { error } = await withSupabaseRetry(
+    () => sb.from('customers').insert({ username: u, password: p, expiry: e }),
+    2
+  );
   if (error) { console.error('Add user error:', error); alert('Failed to add user'); return; }
 
   document.getElementById('newUser').value = '';
@@ -1474,7 +1531,10 @@ async function renderUsers() {
   const list = document.getElementById('userList');
   list.innerHTML = '<div style="text-align:center;padding:1rem;color:#94a3b8">Loading...</div>';
 
-  const { data, error } = await sbAuth.from('customers').select('*').order('created_at', { ascending: true });
+  const { data, error } = await withSupabaseRetry(
+    () => sb.from('customers').select('*').order('created_at', { ascending: true }),
+    2
+  );
   if (error) { console.error('Load users error:', error); list.innerHTML = '<div style="color:red">Failed to load users</div>'; return; }
 
   users = data || [];
@@ -1491,12 +1551,18 @@ async function renderUsers() {
 
     row.querySelector('input').onchange = async (ev) => {
       const newExpiry = ev.target.value;
-      await sbAuth.from('customers').update({ expiry: newExpiry }).eq('id', u.id);
+      await withSupabaseRetry(
+        () => sb.from('customers').update({ expiry: newExpiry }).eq('id', u.id),
+        2
+      );
     };
 
     row.querySelector('button').onclick = async () => {
       if (confirm('Delete user?')) {
-        await sbAuth.from('customers').delete().eq('id', u.id);
+        await withSupabaseRetry(
+          () => sb.from('customers').delete().eq('id', u.id),
+          2
+        );
         renderUsers();
       }
     };
@@ -1520,14 +1586,21 @@ function logout() {
       clearSession();
       return;
     }
+    recreateSupabaseClient();
     let data = null;
     if (session.role === 'admin') {
       // Re-verify admin
-      const res = await sbAuth.from('admin').select('*').eq('id', session.id).limit(1);
+      const res = await withSupabaseRetry(
+        () => sb.from('admin').select('*').eq('id', session.id).limit(1),
+        3
+      );
       data = res.data;
     } else {
       // Re-verify customer
-      const res = await sbAuth.from('customers').select('*').eq('id', session.id).limit(1);
+      const res = await withSupabaseRetry(
+        () => sb.from('customers').select('*').eq('id', session.id).limit(1),
+        3
+      );
       data = res.data;
     }
     if (data && data.length > 0) {
