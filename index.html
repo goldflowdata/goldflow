@@ -246,16 +246,6 @@ small{color:red;}
 /* Client entry separator */
 .client-entry { padding: 0.6rem 0; border-bottom: 2px solid #e6eef8; margin-bottom: 0.5rem; }
 .client-entry:last-child { border-bottom: none; margin-bottom: 0; }
-.expiry-warning {
-  margin: 0.75rem 0 1rem 0;
-  padding: 0.75rem 0.9rem;
-  border-radius: 10px;
-  border: 1px solid #f59e0b;
-  background: #fffbeb;
-  color: #92400e;
-  font-weight: 700;
-  font-size: 13px;
-}
 </style>
 <script type="importmap">
 {
@@ -292,7 +282,6 @@ small{color:red;}
 
   <div class="card">
     <h3>Welcome <span id="currentUser"></span></h3>
-    <div id="expiryWarning" class="expiry-warning hidden"></div>
     <div id="app-container">
     <header>
       <div class="logo-box">
@@ -357,11 +346,7 @@ small{color:red;}
     // --- SUPABASE DB HELPERS ---
     const SESSION_KEY = 'gf_session';
     const IDLE_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes inactivity logout
-    const SESSION_HEARTBEAT_MS = 60 * 1000; // refresh lock every 1 minute
-    const SESSION_LOCK_TTL_MS = 2 * 60 * 1000; // stale lock expires quickly after tab close
-    const SESSION_LOCK_TABLE = 'active_sessions';
     let idleLogoutTimer = null;
-    let sessionHeartbeatTimer = null;
     let idleHandlersAttached = false;
 
     function getSession() {
@@ -393,111 +378,6 @@ small{color:red;}
       localStorage.removeItem(SESSION_KEY);
     }
 
-    function generateSessionId() {
-      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
-        return window.crypto.randomUUID();
-      }
-      return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    }
-
-    function getSessionPrincipal(user) {
-      return {
-        user_type: user.role === 'admin' ? 'admin' : 'user',
-        user_id: String(user.id)
-      };
-    }
-
-    function isMissingLockTableError(error) {
-      if (!error) return false;
-      const msg = String(error.message || '').toLowerCase();
-      return error.code === '42P01' || (msg.includes('does not exist') && msg.includes(SESSION_LOCK_TABLE));
-    }
-
-    function getSessionExpiryISO() {
-      return new Date(Date.now() + SESSION_LOCK_TTL_MS).toISOString();
-    }
-
-    async function acquireSessionLock(user) {
-      const sid = user && user.sessionId;
-      if (!user || !user.id || !sid) return { ok: false, reason: 'invalid_session' };
-      const principal = getSessionPrincipal(user);
-
-      const { data: existing, error: fetchErr } = await sbAuth
-        .from(SESSION_LOCK_TABLE)
-        .select('session_id,expires_at')
-        .eq('user_type', principal.user_type)
-        .eq('user_id', principal.user_id)
-        .maybeSingle();
-
-      if (fetchErr) {
-        if (isMissingLockTableError(fetchErr)) return { ok: false, reason: 'lock_table_missing' };
-        console.error('Session lock read error:', fetchErr);
-        return { ok: false, reason: 'lock_read_error' };
-      }
-
-      if (existing && existing.session_id && existing.session_id !== sid) {
-        const expiresAt = existing.expires_at ? new Date(existing.expires_at).getTime() : 0;
-        if (expiresAt > Date.now()) {
-          return { ok: false, reason: 'already_logged_in' };
-        }
-      }
-
-      const payload = {
-        user_type: principal.user_type,
-        user_id: principal.user_id,
-        session_id: sid,
-        last_seen_at: new Date().toISOString(),
-        expires_at: getSessionExpiryISO()
-      };
-
-      const { error: upsertErr } = await sbAuth
-        .from(SESSION_LOCK_TABLE)
-        .upsert(payload, { onConflict: 'user_type,user_id' });
-
-      if (upsertErr) {
-        if (isMissingLockTableError(upsertErr)) return { ok: false, reason: 'lock_table_missing' };
-        console.error('Session lock upsert error:', upsertErr);
-        return { ok: false, reason: 'lock_write_error' };
-      }
-
-      return { ok: true };
-    }
-
-    async function refreshSessionLock() {
-      const activeSession = getSession();
-      if (!activeSession || !activeSession.id || !activeSession.sessionId) return;
-      const principal = getSessionPrincipal(activeSession);
-      await sbAuth
-        .from(SESSION_LOCK_TABLE)
-        .update({
-          last_seen_at: new Date().toISOString(),
-          expires_at: getSessionExpiryISO()
-        })
-        .eq('user_type', principal.user_type)
-        .eq('user_id', principal.user_id)
-        .eq('session_id', activeSession.sessionId);
-    }
-
-    async function releaseSessionLock() {
-      const activeSession = getSession();
-      if (!activeSession || !activeSession.id || !activeSession.sessionId) return;
-      const principal = getSessionPrincipal(activeSession);
-      await sbAuth
-        .from(SESSION_LOCK_TABLE)
-        .delete()
-        .eq('user_type', principal.user_type)
-        .eq('user_id', principal.user_id)
-        .eq('session_id', activeSession.sessionId);
-    }
-
-    function startSessionHeartbeat() {
-      if (sessionHeartbeatTimer) clearInterval(sessionHeartbeatTimer);
-      sessionHeartbeatTimer = setInterval(() => {
-        refreshSessionLock();
-      }, SESSION_HEARTBEAT_MS);
-      refreshSessionLock();
-    }
-
     function resetInactivityTimer() {
       const activeSession = getSession();
       if (!activeSession) return;
@@ -515,7 +395,6 @@ small{color:red;}
         idleHandlersAttached = true;
       }
       resetInactivityTimer();
-      startSessionHeartbeat();
     }
 
     // Returns the logged-in user object (admin or customer)
@@ -1391,78 +1270,6 @@ async function seedDefaultAdmin() {
 }
 seedDefaultAdmin();
 
-function parseDateOnly(dateStr) {
-  if (!dateStr || typeof dateStr !== 'string') return null;
-  const parts = dateStr.split('-').map(Number);
-  if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
-  const [year, month, day] = parts;
-  return new Date(year, month - 1, day);
-}
-
-function getTodayDateOnly() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-function getDaysUntilExpiry(expiryDateStr) {
-  const expiryDate = parseDateOnly(expiryDateStr);
-  if (!expiryDate) return Number.POSITIVE_INFINITY;
-  const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.floor((expiryDate.getTime() - getTodayDateOnly().getTime()) / msPerDay);
-}
-
-function isAccountExpired(expiryDateStr) {
-  return getDaysUntilExpiry(expiryDateStr) < 0;
-}
-
-function formatExpiryDate(expiryDateStr) {
-  const expiryDate = parseDateOnly(expiryDateStr);
-  if (!expiryDate) return expiryDateStr || '';
-  return expiryDate.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
-}
-
-function getExpiryWarningMessage(expiryDateStr) {
-  const daysRemaining = getDaysUntilExpiry(expiryDateStr);
-  if (daysRemaining < 0 || daysRemaining > 7) return '';
-  const dayText = daysRemaining === 0 ? 'today' : `in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`;
-  return `Your account is expiring ${dayText}. Please contact admin to renew.`;
-}
-
-function updateExpiryWarning(user) {
-  const warningEl = document.getElementById('expiryWarning');
-  if (!warningEl) return;
-
-  warningEl.classList.add('hidden');
-  warningEl.textContent = '';
-
-  if (!user || user.role !== 'user' || !user.expiry) return;
-
-  const message = getExpiryWarningMessage(user.expiry);
-  if (message) {
-    warningEl.textContent = message;
-    warningEl.classList.remove('hidden');
-  }
-}
-
-function maybeShowDailyExpiryPopup(user) {
-  if (!user || user.role !== 'user' || !user.expiry) return;
-
-  const message = getExpiryWarningMessage(user.expiry);
-  if (!message) return;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const popupKey = `gf_expiry_popup_${user.id}`;
-  const lastShownDate = localStorage.getItem(popupKey);
-  if (lastShownDate === today) return;
-
-  alert(message);
-  localStorage.setItem(popupKey, today);
-}
-
 /* ===== LOGIN ===== */
 // --- ADMIN LOGIN VIA REST API ---
 // If you want to login via REST API (not JS client), use fetch with Accept-Profile header:
@@ -1480,190 +1287,58 @@ function maybeShowDailyExpiryPopup(user) {
 //   return data;
 // }
 
-const NETWORK_RETRY_ATTEMPTS = 3;
-const NETWORK_RECOVERY_WAIT_MS = 2200;
-let loginNetworkListenersAttached = false;
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function isLikelyNetworkError(error) {
-  if (!error) return false;
-  const msg = String(error.message || error.details || error.hint || '').toLowerCase();
-  const code = String(error.code || '').toUpperCase();
-  if (typeof error.status === 'number' && error.status === 0) return true;
-  if (['ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'NETWORK_ERROR'].includes(code)) return true;
-  return (
-    msg.includes('failed to fetch') ||
-    msg.includes('network request failed') ||
-    msg.includes('networkerror') ||
-    msg.includes('fetch failed') ||
-    msg.includes('timeout') ||
-    msg.includes('connection') ||
-    msg.includes('dns')
-  );
-}
-
-async function waitForNetworkRecovery(timeoutMs = NETWORK_RECOVERY_WAIT_MS) {
-  if (navigator.onLine) {
-    // Give the browser/network stack a short grace period after handover.
-    await sleep(250);
-    return true;
-  }
-  
-  return new Promise(resolve => {
-    const onOnline = () => {
-      cleanup();
-      setTimeout(() => resolve(true), 250);
-    };
-    const onTimeout = () => {
-      cleanup();
-      resolve(navigator.onLine);
-    };
-    const cleanup = () => {
-      window.removeEventListener('online', onOnline);
-      clearTimeout(timerId);
-    };
-    const timerId = setTimeout(onTimeout, timeoutMs);
-    window.addEventListener('online', onOnline, { once: true });
-  });
-}
-
-async function runAuthQueryWithRetry(queryFactory, label) {
-  let lastResult = { data: null, error: null };
-  for (let attempt = 1; attempt <= NETWORK_RETRY_ATTEMPTS; attempt++) {
-    let result = null;
-    try {
-      result = await queryFactory();
-    } catch (e) {
-      result = { data: null, error: e || { message: 'Unknown auth exception' } };
-    }
-    lastResult = result || { data: null, error: { message: 'Unknown auth error' } };
-    if (!lastResult.error) return lastResult;
-    const canRetry = isLikelyNetworkError(lastResult.error) || !navigator.onLine;
-    if (!canRetry || attempt === NETWORK_RETRY_ATTEMPTS) return lastResult;
-    console.warn(`${label} retry ${attempt}/${NETWORK_RETRY_ATTEMPTS - 1}`, lastResult.error);
-    await waitForNetworkRecovery(NETWORK_RECOVERY_WAIT_MS + (attempt - 1) * 600);
-  }
-  return lastResult;
-}
-
-async function acquireSessionLockWithRetry(user) {
-  let lock = { ok: false, reason: 'lock_read_error' };
-  for (let attempt = 1; attempt <= NETWORK_RETRY_ATTEMPTS; attempt++) {
-    lock = await acquireSessionLock(user);
-    if (lock.ok) return lock;
-    if (lock.reason === 'already_logged_in' || lock.reason === 'lock_table_missing' || lock.reason === 'invalid_session') {
-      return lock;
-    }
-    const transient = lock.reason === 'lock_read_error' || lock.reason === 'lock_write_error';
-    if (!transient || attempt === NETWORK_RETRY_ATTEMPTS) return lock;
-    await waitForNetworkRecovery(NETWORK_RECOVERY_WAIT_MS + (attempt - 1) * 600);
-  }
-  return lock;
-}
-
-function getConnectivityErrorMessage() {
-  return navigator.onLine
-    ? 'Unable to reach login server. Please retry in a moment.'
-    : 'No internet connection. Check network and try again.';
-}
-
-function setupLoginNetworkListeners() {
-  if (loginNetworkListenersAttached) return;
-  window.addEventListener('online', () => {
-    const err = document.getElementById('errorMsg');
-    if (err && /network|internet|server/i.test(err.textContent)) err.textContent = '';
-    showSnackbar('Connection restored');
-  });
-  window.addEventListener('offline', () => {
-    const err = document.getElementById('errorMsg');
-    if (err) err.textContent = 'Internet disconnected. Waiting for reconnection...';
-  });
-  loginNetworkListenersAttached = true;
-}
-
 async function login() {
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value.trim();
   const err = document.getElementById('errorMsg');
-  setupLoginNetworkListeners();
   err.textContent = '';
 
-  if (!u || !p) {
-    err.textContent = 'Enter username and password';
-    return;
-  }
-
-  const onlineReady = await waitForNetworkRecovery(NETWORK_RECOVERY_WAIT_MS);
-  if (!onlineReady) {
-    err.textContent = getConnectivityErrorMessage();
+  if (!navigator.onLine) {
+    err.textContent = 'Check your network/internet connection';
     return;
   }
 
   // Try admin login first (JS client)
-  let { data, error } = await runAuthQueryWithRetry(() => sbAuth.from('admin')
+  let { data, error } = await sbAuth.from('admin')
     .select('*')
     .eq('username', u)
     .eq('password', p)
-    .limit(1), 'Admin login');
+    .limit(1);
 
   if (error) {
     console.error('Admin login error:', error);
-    err.textContent = isLikelyNetworkError(error) ? getConnectivityErrorMessage() : 'Login failed. Please try again.';
+    err.textContent = 'Check your network/internet connection';
     return;
   }
 
   // If you want to use REST API, call loginAdminREST(u, p) instead.
 
   if (data && data.length > 0) {
-    const user = { ...data[0], role: 'admin', sessionId: generateSessionId() };
-    const lock = await acquireSessionLockWithRetry(user);
-    if (!lock.ok) {
-      if (lock.reason === 'already_logged_in') {
-        err.textContent = 'Already logged in on another device';
-      } else if (lock.reason === 'lock_table_missing') {
-        err.textContent = 'Session lock not configured. Contact admin.';
-      } else {
-        err.textContent = getConnectivityErrorMessage();
-      }
-      return;
-    }
+    const user = { ...data[0], role: 'admin' };
     setSession(user);
     showApp(user);
     return;
   }
 
   // Try customer login
-  ({ data, error } = await runAuthQueryWithRetry(() => sbAuth.from('customers')
+  ({ data, error } = await sbAuth.from('customers')
     .select('*')
     .eq('username', u)
     .eq('password', p)
-    .limit(1), 'Customer login'));
+    .limit(1));
 
   if (error) {
     console.error('Customer login error:', error);
-    err.textContent = isLikelyNetworkError(error) ? getConnectivityErrorMessage() : 'Login failed. Please try again.';
+    err.textContent = 'Check your network/internet connection';
     return;
   }
 
   if (data && data.length > 0) {
-    const user = { ...data[0], role: 'user', sessionId: generateSessionId() };
+    const user = { ...data[0], role: 'user' };
     // Check expiry
-    if (isAccountExpired(user.expiry)) {
+    const today = new Date().toISOString().split('T')[0];
+    if (user.expiry && today > user.expiry) {
       err.textContent = 'Account expired. Contact admin.';
-      return;
-    }
-    const lock = await acquireSessionLockWithRetry(user);
-    if (!lock.ok) {
-      if (lock.reason === 'already_logged_in') {
-        err.textContent = 'Already logged in on another device';
-      } else if (lock.reason === 'lock_table_missing') {
-        err.textContent = 'Session lock not configured. Contact admin.';
-      } else {
-        err.textContent = getConnectivityErrorMessage();
-      }
       return;
     }
     setSession(user);
@@ -1678,8 +1353,6 @@ function showApp(user) {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('currentUser').textContent = user.username;
-  updateExpiryWarning(user);
-  maybeShowDailyExpiryPopup(user);
   startInactivityTracking();
 
   if (user.role === 'admin') {
@@ -1749,59 +1422,34 @@ async function renderUsers() {
 }
 
 /* ===== LOGOUT ===== */
-async function logout() {
+function logout() {
   if (idleLogoutTimer) clearTimeout(idleLogoutTimer);
-  if (sessionHeartbeatTimer) clearInterval(sessionHeartbeatTimer);
-  await releaseSessionLock();
   clearSession();
   location.reload();
 }
 
 /* ===== AUTO LOGIN ===== */
 (async function autoLogin() {
-  setupLoginNetworkListeners();
   const session = getSession();
   if (session && session.id) {
     let data = null;
-    let verifyResult = null;
     if (session.role === 'admin') {
       // Re-verify admin
-      verifyResult = await runAuthQueryWithRetry(
-        () => sbAuth.from('admin').select('*').eq('id', session.id).limit(1),
-        'Auto login admin verify'
-      );
+      const res = await sbAuth.from('admin').select('*').eq('id', session.id).limit(1);
+      data = res.data;
     } else {
       // Re-verify customer
-      verifyResult = await runAuthQueryWithRetry(
-        () => sbAuth.from('customers').select('*').eq('id', session.id).limit(1),
-        'Auto login customer verify'
-      );
+      const res = await sbAuth.from('customers').select('*').eq('id', session.id).limit(1);
+      data = res.data;
     }
-    if (verifyResult && verifyResult.error) {
-      if (isLikelyNetworkError(verifyResult.error)) {
-        showSnackbar('Network changed. Please retry after connection stabilizes.', 3500);
-        return;
-      }
-      clearSession();
-      return;
-    }
-    data = verifyResult ? verifyResult.data : null;
     if (data && data.length > 0) {
-      const user = { ...data[0], role: session.role, sessionId: session.sessionId || generateSessionId() };
+      const user = { ...data[0], role: session.role };
       if (user.role === 'user') {
-        if (isAccountExpired(user.expiry)) {
+        const today = new Date().toISOString().split('T')[0];
+        if (user.expiry && today > user.expiry) {
           clearSession();
           return; // expired, stay on login
         }
-      }
-      const lock = await acquireSessionLockWithRetry(user);
-      if (!lock.ok) {
-        if (lock.reason === 'lock_read_error' || lock.reason === 'lock_write_error') {
-          showSnackbar('Network changed. Session will recover when connection stabilizes.', 3500);
-          return;
-        }
-        clearSession();
-        return;
       }
       // Update local session with latest data
       setSession(user);
