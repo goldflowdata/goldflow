@@ -1291,62 +1291,82 @@ async function login() {
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value.trim();
   const err = document.getElementById('errorMsg');
-  err.textContent = '';
+  err.textContent = 'Logging in...';
+
+  if (!u || !p) {
+    err.textContent = 'Enter username and password';
+    return;
+  }
 
   if (!navigator.onLine) {
     err.textContent = 'Check your network/internet connection';
     return;
   }
 
-  // Try admin login first (JS client)
-  let { data, error } = await sbAuth.from('admin')
-    .select('*')
-    .eq('username', u)
-    .eq('password', p)
-    .limit(1);
+  // Wait a moment for WiFi to stabilize
+  await new Promise(resolve => setTimeout(resolve, 500));
 
-  if (error) {
-    console.error('Admin login error:', error);
-    err.textContent = 'Check your network/internet connection';
-    return;
-  }
+  // Retry logic for WiFi connections
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Try admin login first (JS client)
+      let { data, error } = await sbAuth.from('admin')
+        .select('*')
+        .eq('username', u)
+        .eq('password', p)
+        .limit(1);
 
-  // If you want to use REST API, call loginAdminREST(u, p) instead.
+      if (!error && data && data.length > 0) {
+        const user = { ...data[0], role: 'admin' };
+        setSession(user);
+        showApp(user);
+        return;
+      }
 
-  if (data && data.length > 0) {
-    const user = { ...data[0], role: 'admin' };
-    setSession(user);
-    showApp(user);
-    return;
-  }
+      // Try customer login
+      ({ data, error } = await sbAuth.from('customers')
+        .select('*')
+        .eq('username', u)
+        .eq('password', p)
+        .limit(1));
 
-  // Try customer login
-  ({ data, error } = await sbAuth.from('customers')
-    .select('*')
-    .eq('username', u)
-    .eq('password', p)
-    .limit(1));
+      if (!error && data && data.length > 0) {
+        const user = { ...data[0], role: 'user' };
+        // Check expiry
+        const today = new Date().toISOString().split('T')[0];
+        if (user.expiry && today > user.expiry) {
+          err.textContent = 'Account expired. Contact admin.';
+          return;
+        }
+        setSession(user);
+        showApp(user);
+        return;
+      }
 
-  if (error) {
-    console.error('Customer login error:', error);
-    err.textContent = 'Check your network/internet connection';
-    return;
-  }
+      // If no error and no matching user, credentials are invalid
+      if (!error) {
+        err.textContent = 'Invalid credentials';
+        return;
+      }
 
-  if (data && data.length > 0) {
-    const user = { ...data[0], role: 'user' };
-    // Check expiry
-    const today = new Date().toISOString().split('T')[0];
-    if (user.expiry && today > user.expiry) {
-      err.textContent = 'Account expired. Contact admin.';
-      return;
+      // If we got an error, this might be network-related, retry
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        continue;
+      }
+
+    } catch (e) {
+      console.error('Login attempt ' + attempt + ' error:', e);
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        continue;
+      }
     }
-    setSession(user);
-    showApp(user);
-    return;
   }
 
-  err.textContent = 'Invalid credentials';
+  // All retries failed
+  err.textContent = 'Connection failed. Please check your WiFi and try again.';
 }
 
 function showApp(user) {
